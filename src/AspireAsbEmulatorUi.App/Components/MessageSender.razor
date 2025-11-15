@@ -7,7 +7,31 @@
 @inject PlaceholderService PlaceholderService
 
 <div>
-    <h3 class="text-lg font-medium mb-2">Send Message to @DisplayName</h3>    
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="text-lg font-medium">Send Message to @DisplayName</h3>
+        <button class="px-3 py-1 rounded bg-slate-600 text-white hover:bg-slate-700 text-sm" @onclick="ClearAll" title="Clear all fields">
+            <span class="flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Clear All
+            </span>
+        </button>
+    </div>
+
+    @if (_cannedMessages.Any())
+    {
+        <div class="mb-3">
+            <label class="text-sm text-slate-400 block mb-1">Load Canned Message</label>
+            <select @bind="_selectedCannedMessage" @bind:after="LoadCannedMessage" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-full">
+                <option value="">-- Select a canned message --</option>
+                @foreach (var scenario in _cannedMessages)
+                {
+                    <option value="@scenario">@scenario</option>
+                }
+            </select>
+        </div>
+    }
 
     <div class="mb-3">
         <HandyClipboardValues />
@@ -110,6 +134,125 @@
     private string _cannedEntityName = string.Empty;
     private string _cannedScenarioName = string.Empty;
 
+    private string _selectedCannedMessage = string.Empty;
+    private List<string> _cannedMessages = new();
+    private string? _matchedEntityKey = null;
+
+    protected override void OnParametersSet()
+    {
+        LoadAvailableCannedMessages();
+    }
+
+    private void LoadAvailableCannedMessages()
+    {
+        _cannedMessages.Clear();
+        _selectedCannedMessage = string.Empty;
+        _matchedEntityKey = null;
+
+        if (string.IsNullOrWhiteSpace(SelectedEntity))
+            return;
+
+        var settings = SettingsService.GetSettings();
+        
+        // Try exact match first
+        if (settings.CannedMessages.TryGetValue(SelectedEntity, out var scenarios))
+        {
+            _matchedEntityKey = SelectedEntity;
+            _cannedMessages = scenarios.Keys.OrderBy(k => k).ToList();
+            return;
+        }
+        
+        // Try case-insensitive match
+        var matchingKey = settings.CannedMessages.Keys
+            .FirstOrDefault(k => string.Equals(k, SelectedEntity, StringComparison.OrdinalIgnoreCase));
+        
+        if (matchingKey != null && settings.CannedMessages.TryGetValue(matchingKey, out var scenariosInsensitive))
+        {
+            _matchedEntityKey = matchingKey;
+            _cannedMessages = scenariosInsensitive.Keys.OrderBy(k => k).ToList();
+        }
+    }
+
+    private async Task LoadCannedMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedCannedMessage) || string.IsNullOrWhiteSpace(_matchedEntityKey))
+            return;
+
+        try
+        {
+            var settings = SettingsService.GetSettings();
+            if (settings.CannedMessages.TryGetValue(_matchedEntityKey, out var scenarios) &&
+                scenarios.TryGetValue(_selectedCannedMessage, out var cannedMsg) &&
+                cannedMsg != null)
+            {
+                // Set content type
+                _contentType = cannedMsg.ContentType ?? "application/json";
+
+                // Set body in editor
+                _body = cannedMsg.Body ?? string.Empty;
+                if (_editor != null)
+                {
+                    await _editor.SetValue(_body);
+                    await OnContentTypeChanged();
+                }
+
+                // Load application properties
+                _appProperties.Clear();
+                if (cannedMsg.ApplicationProperties != null)
+                {
+                    foreach (var prop in cannedMsg.ApplicationProperties)
+                    {
+                        _appProperties.Add(new ApplicationPropertiesEditor.PropertyItem
+                        {
+                            Key = prop.Key,
+                            Value = prop.Value?.ToString() ?? string.Empty
+                        });
+                    }
+                }
+
+                // Load broker properties
+                _brokerProperties.Clear();
+                if (cannedMsg.BrokerProperties != null)
+                {
+                    foreach (var prop in cannedMsg.BrokerProperties)
+                    {
+                        _brokerProperties.Add(new BrokerPropertiesEditor.PropertyItem
+                        {
+                            Key = prop.Key,
+                            Value = prop.Value?.ToString() ?? string.Empty
+                        });
+                    }
+                }
+
+                _result = $"Loaded canned message: {_selectedCannedMessage}";
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _result = $"Error loading canned message: {ex.Message}";
+        }
+    }
+
+    private async Task ClearAll()
+    {
+        _body = string.Empty;
+        if (_editor != null)
+        {
+            await _editor.SetValue(string.Empty);
+        }
+        
+        _contentType = "application/json";
+        await OnContentTypeChanged();
+        
+        _appProperties.Clear();
+        _brokerProperties.Clear();
+        _selectedCannedMessage = string.Empty;
+        _result = string.Empty;
+        
+        StateHasChanged();
+    }
+
     private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
     {
         return new StandaloneEditorConstructionOptions
@@ -188,19 +331,22 @@
                 _body = await _editor.GetValue();
             }
 
+            // Process placeholders in the body
+            var processedBody = PlaceholderService.ProcessPlaceholders(_body);
+
             var ct = _contentType;
 
             var appProps = _appProperties
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-                .ToDictionary(k => k.Key, v => (object?)v.Value);
+                .ToDictionary(k => k.Key, v => (object?)PlaceholderService.ProcessPlaceholders(v.Value));
             
             var brokerProps = _brokerProperties
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-                .ToDictionary(k => k.Key, v => (object?)v.Value);
+                .ToDictionary(k => k.Key, v => (object?)PlaceholderService.ProcessPlaceholders(v.Value));
 
             if (!string.IsNullOrWhiteSpace(ct)) brokerProps["ContentType"] = ct;
 
-            await Bus.SendMessageAsync(SelectedEntity, _body, appProps, brokerProps);
+            await Bus.SendMessageAsync(SelectedEntity, processedBody, appProps, brokerProps);
             _result = $"Sent at {DateTime.Now:HH:mm:ss}";
             
             // Clear the editor and properties
@@ -271,6 +417,9 @@
             _showSaveDialog = false;
             _cannedEntityName = string.Empty;
             _cannedScenarioName = string.Empty;
+
+            // Refresh the available canned messages list
+            LoadAvailableCannedMessages();
         }
         catch (Exception ex)
         {

@@ -25,7 +25,7 @@
     }
   ],
   "CannedMessages": {
-    "myqueue": {
+    "queue-one": {
       "test 1": {
         "ContentType": "application/json",
         "Body": "{\n   \"test\": \"andrew\"\n}",

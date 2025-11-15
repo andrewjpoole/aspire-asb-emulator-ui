@@ -5,6 +5,7 @@ public class ServiceBusEntityInfo
     public long Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string EntityType { get; set; } = string.Empty;
+    public string? ParentTopic { get; set; }
     public long ActiveMessageCount { get; set; }
     public long DeadletterMessageCount { get; set; }
 
@@ -31,6 +32,16 @@ public class ServiceBusEntityInfo
                 if (first.Equals("QUEUE", StringComparison.OrdinalIgnoreCase) || first.Equals("TOPIC", StringComparison.OrdinalIgnoreCase))
                 {
                     s = parts[1];
+                }
+            }
+
+            // For subscriptions, extract just the subscription name (after the parent topic)
+            if (!string.IsNullOrEmpty(ParentTopic) && s.Contains('|'))
+            {
+                var subParts = s.Split('|', 2);
+                if (subParts.Length == 2)
+                {
+                    s = subParts[1];
                 }
             }
 

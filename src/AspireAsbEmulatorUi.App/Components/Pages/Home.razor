@@ -79,10 +79,10 @@
                                         <div class="flex items-center justify-between">
                                             <div class="font-medium text-slate-100">@e.DisplayName</div>
                                             <div class="flex items-center gap-2">
-                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!)">
+                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">
                                                     <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
                                                 </div>
-                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!)">
+                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">
                                                     <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
                                                 </div>
                                             </div>
@@ -94,7 +94,7 @@
                     </div>
                 </div>
 
-                <!-- Topics Section -->
+                <!-- Topics Section (with subscriptions as children) -->
                 <div>
                     <h3 class="text-lg font-semibold mb-3 text-slate-200 flex items-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -116,26 +116,28 @@
                             }
                             else
                             {
-                                foreach (var e in topics)
+                                foreach (var topic in topics)
                                 {
-                                    var isSelected = _selectedEntity == e.Name;
-                                    var cardClass = isSelected 
+                                    var isTopicSelected = _selectedEntity == topic.Name;
+                                    var topicCardClass = isTopicSelected 
                                         ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
                                         : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
                                     
-                                    <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
+                                    <div class="@topicCardClass" @onclick="@(() => SelectEntity(topic))">
                                         <div class="flex items-center justify-between">
-                                            <div class="font-medium text-slate-100">@e.DisplayName</div>
+                                            <div class="font-medium text-slate-100">@topic.DisplayName</div>
                                             <div class="flex items-center gap-2">
                                                 <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
-                                                    <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
+                                                    <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@topic.ActiveMessageCount</span>
                                                 </div>
                                                 <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
-                                                    <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
+                                                    <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@topic.DeadletterMessageCount</span>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
+
+                                    @RenderSubscriptions(topic)
                                 }
                             }
                         }
@@ -154,7 +156,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                         </svg>
                         <p class="text-slate-400 text-lg mb-2">Select an entity</p>
-                        <p class="text-slate-500 text-sm">Choose a queue or topic from the left panel to view messages or send new ones.</p>
+                        <p class="text-slate-500 text-sm">Choose a queue, topic, or subscription from the left panel.</p>
                     </div>
                 </div>
             }
@@ -162,7 +164,9 @@
             {
                 <div class="p-3 border-b border-slate-700 bg-slate-850">
                     <nav class="flex gap-2">
-                        <button class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "viewer" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600")}") @onclick="ShowViewer">
+                        <button 
+                            class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "viewer" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600")}") 
+                            @onclick="ShowViewer">
                             <span class="flex items-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -171,12 +175,22 @@
                                 Viewer
                             </span>
                         </button>
-                        <button class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "sender" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600")}") @onclick="ShowSender">
+                        <button 
+                            class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "sender" ? "bg-blue-600 text-white" : (_selectedEntityType == "Subscription" ? "bg-slate-800 text-slate-500 cursor-not-allowed" : "bg-slate-700 text-slate-200 hover:bg-slate-600"))}")
+                            @onclick="ShowSender"
+                            disabled="@(_selectedEntityType == "Subscription")"
+                            title="@(_selectedEntityType == "Subscription" ? "Cannot send to subscriptions - send to the parent topic instead" : "")">
                             <span class="flex items-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                                 </svg>
                                 Send
+                                @if (_selectedEntityType == "Subscription")
+                                {
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                    </svg>
+                                }
                             </span>
                         </button>
                     </nav>
@@ -187,7 +201,7 @@
                     {
                         <MessageViewer SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" />
                     }
-                    else
+                    else if (_activeTab == "sender")
                     {
                         <MessageSender SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" />
                     }
@@ -203,6 +217,7 @@
 
     private string _selectedEntity = string.Empty;
     private string _selectedDisplayName = string.Empty;
+    private string _selectedEntityType = string.Empty;
     private bool _isDlqSelected = false;
 
     private string _sendBody = string.Empty;
@@ -259,37 +274,20 @@
     {
         _selectedEntity = e.Name;
         _selectedDisplayName = e.DisplayName;
+        _selectedEntityType = e.EntityType;
         _isDlqSelected = false;
         _sendResult = string.Empty;
+        
+        // Auto-switch to viewer tab if selecting a subscription
+        if (e.EntityType == "Subscription")
+        {
+            _activeTab = "viewer";
+        }
     }
 
     private void NavigateToSettings()
     {
         Navigation.NavigateTo("/settings");
-    }
-
-    private void OnTargetChanged(ChangeEventArgs e)
-    {
-        var val = e?.Value?.ToString();
-        if (string.IsNullOrWhiteSpace(val))
-        {
-            _selectedEntity = string.Empty;
-            _selectedDisplayName = string.Empty;
-            return;
-        }
-
-        _selectedEntity = val;
-        _selectedDisplayName = _entities.FirstOrDefault(x => x.Name == val)?.DisplayName ?? val;
-        _isDlqSelected = false;
-        _sendResult = string.Empty;
-    }
-
-    private void OpenViewer(string name, bool dlq)
-    {
-        _selectedEntity = name;
-        _selectedDisplayName = _entities.FirstOrDefault(x => x.Name == name)?.DisplayName ?? name;
-        _isDlqSelected = dlq;
-        _activeTab = "viewer";
     }
 
     private void ShowViewer()
@@ -299,8 +297,85 @@
 
     private void ShowSender()
     {
-        _activeTab = "sender";
+        // Don't allow switching to sender for subscriptions
+        if (_selectedEntityType != "Subscription")
+        {
+            _activeTab = "sender";
+        }
     }
+
+    private RenderFragment RenderSubscriptions(Models.ServiceBusEntityInfo topic) => builder =>
+    {
+        var subs = _entities.Where(e => e.EntityType == "Subscription" && e.ParentTopic == topic.Name && EvaluateFilter(e)).ToList();
+        
+        if (subs.Any())
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "ml-6 space-y-1 mt-1");
+            
+            foreach (var sub in subs)
+            {
+                var isSubSelected = _selectedEntity == sub.Name;
+                var subCardClass = isSubSelected
+                    ? "p-2 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors"
+                    : "p-2 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
+
+                builder.OpenElement(2, "div");
+                builder.AddAttribute(3, "class", subCardClass);
+                builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => SelectEntity(sub)));
+                
+                builder.OpenElement(5, "div");
+                builder.AddAttribute(6, "class", "flex items-center justify-between");
+                
+                // Left side - icon and name
+                builder.OpenElement(7, "div");
+                builder.AddAttribute(8, "class", "flex items-center gap-2");
+                
+                builder.AddMarkupContent(9, @"<svg xmlns=""http://www.w3.org/2000/svg"" class=""h-4 w-4 text-purple-300"" fill=""none"" viewBox=""0 0 24 24"" stroke=""currentColor"">
+                    <path stroke-linecap=""round"" stroke-linejoin=""round"" stroke-width=""2"" d=""M9 5l7 7-7 7"" />
+                </svg>");
+                
+                builder.OpenElement(10, "span");
+                builder.AddAttribute(11, "class", "text-sm font-medium text-slate-200");
+                builder.AddContent(12, sub.DisplayName);
+                builder.CloseElement(); // span
+                
+                builder.CloseElement(); // div (left side)
+                
+                // Right side - message counts
+                builder.OpenElement(13, "div");
+                builder.AddAttribute(14, "class", "flex items-center gap-2");
+                
+                // Active count
+                builder.OpenElement(15, "div");
+                builder.AddAttribute(16, "class", "text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300");
+                builder.AddAttribute(17, "title", "Active messages");
+                builder.AddMarkupContent(18, @"<span class=""text-slate-400"">Active:</span> ");
+                builder.OpenElement(19, "span");
+                builder.AddAttribute(20, "class", "font-semibold text-green-400");
+                builder.AddContent(21, sub.ActiveMessageCount);
+                builder.CloseElement(); // span
+                builder.CloseElement(); // div (active)
+                
+                // DLQ count
+                builder.OpenElement(22, "div");
+                builder.AddAttribute(23, "class", "text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300");
+                builder.AddAttribute(24, "title", "Dead-letter queue messages");
+                builder.AddMarkupContent(25, @"<span class=""text-slate-400"">DLQ:</span> ");
+                builder.OpenElement(26, "span");
+                builder.AddAttribute(27, "class", "font-semibold text-red-400");
+                builder.AddContent(28, sub.DeadletterMessageCount);
+                builder.CloseElement(); // span
+                builder.CloseElement(); // div (dlq)
+                
+                builder.CloseElement(); // div (right side)
+                builder.CloseElement(); // div (flex container)
+                builder.CloseElement(); // div (card)
+            }
+            
+            builder.CloseElement(); // div (ml-6 container)
+        }
+    };
 
     private Task OnAutoRefreshChanged(ChangeEventArgs e)
     {

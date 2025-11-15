@@ -9,7 +9,16 @@ var serviceBus = builder
     .AddAzureServiceBus("myservicebus")
     .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
 
-serviceBus.AddServiceBusQueue("myqueue");
+serviceBus.AddServiceBusQueue("queue-one");
+serviceBus.AddServiceBusQueue("queue-two");
+serviceBus.AddServiceBusQueue("queue-three");
+serviceBus.AddServiceBusQueue("queue-four");
+serviceBus.AddServiceBusQueue("queue-five");
+serviceBus.AddServiceBusTopic("topic-one-with-a-very-very-very-very-very-very-very-long-name")
+    .AddServiceBusSubscription("sub1-dummy-app");
+var topic2 = serviceBus.AddServiceBusTopic("topic-two");
+topic2.AddServiceBusSubscription("topic2-sub1-dummy-app");
+topic2.AddServiceBusSubscription("topic2-sub2-dummy-app");
 
 var apiService = builder.AddProject<AspireAsbEmulatorUi_App>("asb-ui")
     .WithReference(serviceBus)
