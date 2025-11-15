@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
 });
 
 builder.Services.AddSingleton<SettingsService>();
+builder.Services.AddSingleton<PlaceholderService>();
 
 var app = builder.Build();
 

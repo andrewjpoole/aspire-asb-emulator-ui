@@ -8,7 +8,7 @@
 
 <PageTitle>Home</PageTitle>
 
-<main class="max-w-screen-2xl mx-auto p-6">
+<main class="min-h-screen max-w-screen-2xl mx-auto p-6 flex flex-col">
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-semibold">ASB Emulator Explorer</h1>
         <button class="px-3 py-2 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center gap-2" @onclick="NavigateToSettings" title="Settings">
@@ -19,129 +19,170 @@
         </button>
     </div>
 
-    <div class="flex items-center gap-3 mb-4">
-        <label class="text-sm text-slate-300">Filter</label>
-        <input @bind="_filter" placeholder="search by name or id" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-64" />
-        <button class="px-3 py-1 rounded border border-slate-700 text-slate-100 hover:bg-slate-700" @onclick="ApplyFilter">Apply</button>
-    </div>
+    <div class="flex-1 grid grid-cols-12 gap-6 min-h-0">
+        <!-- Left pane - Entities List -->
+        <div class="col-span-5 flex flex-col bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+            <div class="p-4 border-b border-slate-700 bg-slate-850">
+                <div class="flex items-center gap-3 mb-4">
+                    <label class="text-sm text-slate-300 font-medium">Filter</label>
+                    <input @bind="_filter" placeholder="search by name or id" class="bg-slate-900 border border-slate-600 text-slate-100 px-3 py-1 rounded flex-1" />
+                    <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ApplyFilter">Apply</button>
+                </div>
 
-    <div class="grid grid-cols-12 gap-6">
-        <!-- Left pane -->
-        <div class="col-span-5 space-y-4">
-            <div class="flex items-center justify-between mb-2">
-                <div class="flex items-center gap-3">
-                    <span class="text-sm">Refresh</span>
-                    <div class="flex rounded bg-slate-700 p-1">
-                        <button class=@($"px-3 py-1 rounded-l text-sm {(_autoRefreshEnabled ? "bg-blue-600 text-white" : "text-slate-200")}") title="Auto refresh every 2 seconds for 5 minutes." @onclick="async () => await SetAutoRefresh(true)">Auto</button>
-                        <button class=@($"px-3 py-1 rounded-r text-sm {(!_autoRefreshEnabled ? "bg-blue-600 text-white" : "text-slate-200")}") title="Disable Auto refresh" @onclick="async () => await SetAutoRefresh(false)">Manual</button>
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-slate-300 font-medium">Refresh</span>
+                        <div class="flex rounded bg-slate-700 p-1">
+                            <button class=@($"px-3 py-1 rounded-l text-sm {(_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Auto refresh every 2 seconds for 5 minutes." @onclick="async () => await SetAutoRefresh(true)">Auto</button>
+                            <button class=@($"px-3 py-1 rounded-r text-sm {(!_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Disable Auto refresh" @onclick="async () => await SetAutoRefresh(false)">Manual</button>
+                        </div>
+
+                        <button title="Refresh Entities now!" class=@($"px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 {(_autoRefreshEnabled ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700")}") @onclick="Refresh" disabled="@_autoRefreshEnabled">
+                            <span class="text-sm">Now!</span>
+                        </button>
                     </div>
-
-                    <button title="Refresh Entities now!" class=@($"px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 {(_autoRefreshEnabled ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700")}") @onclick="Refresh" disabled="@_autoRefreshEnabled">
-                        <span class="text-sm">Now!</span>
-                    </button>
-
                     <div class="text-xs text-slate-400" title="Last refresh time">@@ @(_lastRefreshed.HasValue ? _lastRefreshed.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Never")</div>
                 </div>
             </div>
 
-            <div class="flex items-center justify-between">
-                <h3 class="text-lg font-medium">Queues</h3>
-            </div>
-
-            <div class="space-y-3 max-h-[60vh] overflow-auto pr-2">
-                @if (_loading)
-                {
-                    <div class="text-sm text-slate-400">Loading...</div>
-                }
-                else
-                {
-                    var queues = _entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
-                    if (!queues.Any())
-                    {
-                        <div class="bg-slate-800 rounded p-3 text-slate-400">No queues.</div>
-                    }
-                    else
-                    {
-                        foreach (var e in queues)
+            <div class="flex-1 overflow-y-auto p-4 space-y-6">
+                <!-- Queues Section -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-3 text-slate-200 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        Queues
+                    </h3>
+                    <div class="space-y-2">
+                        @if (_loading)
                         {
-                            var isSelected = _selectedEntity == e.Name;
-                            var cardClass = isSelected 
-                                ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700" 
-                                : "p-3 rounded cursor-pointer border border-slate-700 bg-slate-800 hover:bg-slate-700";
-                            
-                            <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <div class="font-semibold">@e.DisplayName</div>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <div class="text-sm px-2 py-0.5 rounded bg-slate-700" title="ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">Active: @e.ActiveMessageCount</div>
-                                        <div class="text-sm px-2 py-0.5 rounded bg-slate-700" title="ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">DLQ: @e.DeadletterMessageCount</div>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    }
-                }
-            </div>
-
-            <div>
-                <h3 class="text-lg font-medium mb-2">Topics</h3>
-                <div class="space-y-3 max-h-[60vh] overflow-auto pr-2">
-                    @if (_loading)
-                    {
-                        <div class="text-sm text-slate-400">Loading...</div>
-                    }
-                    else
-                    {
-                        var topics = _entities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
-                        if (!topics.Any())
-                        {
-                            <div class="bg-slate-800 rounded p-3 text-slate-400">No topics.</div>
+                            <div class="text-sm text-slate-400 py-2">Loading...</div>
                         }
                         else
                         {
-                            foreach (var e in topics)
+                            var queues = _entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                            if (!queues.Any())
                             {
-                                var isSelected = _selectedEntity == e.Name;
-                                var cardClass = isSelected 
-                                    ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700" 
-                                    : "p-3 rounded cursor-pointer border border-slate-700 bg-slate-800 hover:bg-slate-700";
-                                
-                                <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
-                                    <div class="flex items-center justify-between">
-                                        <div>
-                                            <div class="font-semibold">@e.DisplayName</div>
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <div class="text-sm px-2 py-0.5 rounded bg-slate-700">Active: @e.ActiveMessageCount</div>
-                                            <div class="text-sm px-2 py-0.5 rounded bg-slate-700">DLQ: @e.DeadletterMessageCount</div>
+                                <div class="bg-slate-900 rounded p-3 text-slate-400 text-sm border border-slate-700">No queues found.</div>
+                            }
+                            else
+                            {
+                                foreach (var e in queues)
+                                {
+                                    var isSelected = _selectedEntity == e.Name;
+                                    var cardClass = isSelected 
+                                        ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
+                                        : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
+                                    
+                                    <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
+                                        <div class="flex items-center justify-between">
+                                            <div class="font-medium text-slate-100">@e.DisplayName</div>
+                                            <div class="flex items-center gap-2">
+                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!)">
+                                                    <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
+                                                </div>
+                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!)">
+                                                    <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                }
                             }
                         }
-                    }
+                    </div>
+                </div>
+
+                <!-- Topics Section -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-3 text-slate-200 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Topics
+                    </h3>
+                    <div class="space-y-2">
+                        @if (_loading)
+                        {
+                            <div class="text-sm text-slate-400 py-2">Loading...</div>
+                        }
+                        else
+                        {
+                            var topics = _entities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                            if (!topics.Any())
+                            {
+                                <div class="bg-slate-900 rounded p-3 text-slate-400 text-sm border border-slate-700">No topics found.</div>
+                            }
+                            else
+                            {
+                                foreach (var e in topics)
+                                {
+                                    var isSelected = _selectedEntity == e.Name;
+                                    var cardClass = isSelected 
+                                        ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
+                                        : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
+                                    
+                                    <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
+                                        <div class="flex items-center justify-between">
+                                            <div class="font-medium text-slate-100">@e.DisplayName</div>
+                                            <div class="flex items-center gap-2">
+                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
+                                                    <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
+                                                </div>
+                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
+                                                    <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        }
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Right pane (tabbed) -->
-        <div class="col-span-7">
+        <!-- Right pane - Message Viewer/Sender -->
+        <div class="col-span-7 flex flex-col bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
             @if (string.IsNullOrEmpty(_selectedEntity))
             {
-                <div class="bg-slate-800 rounded p-4 text-slate-400">Select an entity on the left to view messages or send.</div>
+                <div class="flex-1 flex items-center justify-center p-8">
+                    <div class="text-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto mb-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                        </svg>
+                        <p class="text-slate-400 text-lg mb-2">Select an entity</p>
+                        <p class="text-slate-500 text-sm">Choose a queue or topic from the left panel to view messages or send new ones.</p>
+                    </div>
+                </div>
             }
             else
             {
-                <div class="bg-slate-800 rounded p-2 mb-4">
+                <div class="p-3 border-b border-slate-700 bg-slate-850">
                     <nav class="flex gap-2">
-                        <button class=@($"px-3 py-1 rounded {(_activeTab == "viewer" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200")}") @onclick="ShowViewer">Viewer</button>
-                        <button class=@($"px-3 py-1 rounded {(_activeTab == "sender" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200")}") @onclick="ShowSender">Send</button>
+                        <button class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "viewer" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600")}") @onclick="ShowViewer">
+                            <span class="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                Viewer
+                            </span>
+                        </button>
+                        <button class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "sender" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600")}") @onclick="ShowSender">
+                            <span class="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                                Send
+                            </span>
+                        </button>
                     </nav>
                 </div>
 
-                <div>
+                <div class="flex-1 overflow-y-auto p-4">
                     @if (_activeTab == "viewer")
                     {
                         <MessageViewer SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" />

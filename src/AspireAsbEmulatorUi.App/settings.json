@@ -2,7 +2,8 @@
   "ContentTypes": [
     "application/json",
     "text/plain",
-    "application/xml"
+    "application/xml",
+    "application/octet-stream"
   ],
   "DefaultContentType": "application/json",
   "CommonApplicationProperties": [
@@ -12,19 +13,39 @@
     },
     {
       "Key": "MessageType",
-      "Value": "MT_COMNAND"
+      "Value": "MT_COMMAND"
+    },
+    {
+      "Key": "Source",
+      "Value": "AspireAsbEmulatorUi"
+    },
+    {
+      "Key": "Environment",
+      "Value": "Development"
     }
   ],
   "CannedMessages": {
     "myqueue": {
       "test 1": {
         "ContentType": "application/json",
-        "Body": "{\n   \u0022test\u0022: \u0022andrew\u0022\n}",
+        "Body": "{\n   \"test\": \"andrew\"\n}",
         "BrokerProperties": {
           "CorrelationId": "ddd195a3-fa2a-4150-a693-f59df3a60af7"
         },
         "ApplicationProperties": {
-          "TestAppProp": "hello"
+          "TestAppProp": "hello-world"
+        }
+      },
+      "sample event": {
+        "ContentType": "application/json",
+        "Body": "{\n  \"eventId\": \"~newGuid~\",\n  \"eventType\": \"UserCreated\",\n  \"timestamp\": \"~now~\",\n  \"data\": {\n    \"userId\": \"12345\",\n    \"username\": \"john.doe\",\n    \"email\": \"john.doe@example.com\"\n  }\n}",
+        "BrokerProperties": {
+          "CorrelationId": "~newGuid~",
+          "MessageId": "~newGuid~"
+        },
+        "ApplicationProperties": {
+          "MessageType": "MT_EVENT",
+          "Source": "UserService"
         }
       }
     }

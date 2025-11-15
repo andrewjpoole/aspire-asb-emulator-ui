@@ -117,11 +117,18 @@
                                         <div class="mt-3 space-y-4">
                                             <div>
                                                 <label class="text-xs text-slate-400 block mb-1">Content Type</label>
-                                                <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" @bind="scenario.Value.ContentType" />
+                                                <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" @bind="scenario.Value.ContentType" @bind:after="() => OnContentTypeChanged(scenarioKey)" />
                                             </div>
                                             <div>
                                                 <label class="text-xs text-slate-400 block mb-1">Body</label>
-                                                <textarea rows="6" class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm font-mono" @bind="scenario.Value.Body"></textarea>
+                                                <div class="border border-slate-700 rounded overflow-hidden" style="height: 200px; width: 100%;">
+                                                    <StandaloneCodeEditor 
+                                                        @ref="_bodyEditors[scenarioKey]" 
+                                                        Id="@($"body-editor-{scenarioKey}")"
+                                                        CssClass="h-full w-full"
+                                                        ConstructionOptions="@((editor) => GetEditorConstructionOptions(editor, scenarioKey))"
+                                                        OnDidInit="@(() => OnEditorInit(scenarioKey))" />
+                                                </div>
                                             </div>
             
                                             @if (_appPropsLists.ContainsKey(scenarioKey))
@@ -208,6 +215,9 @@
     private Dictionary<string, List<ApplicationPropertiesEditor.PropertyItem>> _appPropsLists = new();
     private Dictionary<string, List<BrokerPropertiesEditor.PropertyItem>> _brokerPropsLists = new();
     
+    // Monaco editor instances for each scenario
+    private Dictionary<string, StandaloneCodeEditor> _bodyEditors = new();
+    
     protected override void OnInitialized()
     {
         _settings = SettingsService.GetSettings();
@@ -253,6 +263,71 @@
             }
          }
      }
+
+    private StandaloneEditorConstructionOptions GetEditorConstructionOptions(StandaloneCodeEditor editor, string scenarioKey)
+    {
+        var parts = scenarioKey.Split(':');
+        var entityName = parts[0];
+        var scenarioName = parts[1];
+        
+        string body = "{}";
+        string contentType = "application/json";
+        
+        if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+            scenarios.TryGetValue(scenarioName, out var msg) &&
+            msg != null)
+        {
+            body = msg.Body ?? "{}";
+            contentType = msg.ContentType ?? "application/json";
+        }
+        
+        return new StandaloneEditorConstructionOptions
+        {
+            AutomaticLayout = true,
+            Language = GetMonacoLanguage(contentType),
+            Theme = "vs-dark",
+            Value = body,
+            Minimap = new EditorMinimapOptions { Enabled = false },
+            ScrollBeyondLastLine = false,
+            FontSize = 13,
+            TabSize = 2
+        };
+    }
+
+    private async Task OnEditorInit(string scenarioKey)
+    {
+        if (_bodyEditors.TryGetValue(scenarioKey, out var editor))
+        {
+            var parts = scenarioKey.Split(':');
+            var entityName = parts[0];
+            var scenarioName = parts[1];
+            
+            if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+                scenarios.TryGetValue(scenarioName, out var msg) &&
+                msg != null)
+            {
+                await editor.SetValue(msg.Body ?? "{}");
+            }
+        }
+    }
+
+    private async Task OnContentTypeChanged(string scenarioKey)
+    {
+        if (_bodyEditors.TryGetValue(scenarioKey, out var editor))
+        {
+            var parts = scenarioKey.Split(':');
+            var entityName = parts[0];
+            var scenarioName = parts[1];
+            
+            if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+                scenarios.TryGetValue(scenarioName, out var msg) &&
+                msg != null)
+            {
+                var model = await editor.GetModel();
+                await Global.SetModelLanguage(model, GetMonacoLanguage(msg.ContentType ?? "application/json"));
+            }
+        }
+    }
 
     private List<ApplicationPropertiesEditor.PropertyItem> GetAppPropertiesList(string entityName, string scenarioName)
     {
@@ -387,11 +462,26 @@
 
     private async Task SaveSettings()
     {
-        // Save all property lists back to the settings before saving
+        // Save all editor values back to the settings before saving
         foreach (var entity in _settings.CannedMessages)
         {
             foreach (var scenario in entity.Value)
             {
+                var key = $"{entity.Key}:{scenario.Key}";
+                
+                // Get value from Monaco editor if it exists
+                if (_bodyEditors.TryGetValue(key, out var editor) && scenario.Value != null)
+                {
+                    try
+                    {
+                        scenario.Value.Body = await editor.GetValue();
+                    }
+                    catch
+                    {
+                        // Editor might not be initialized yet, skip
+                    }
+                }
+                
                 SaveAppPropertiesFromList(entity.Key, scenario.Key);
                 SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
             }
@@ -407,11 +497,26 @@
 
     private async Task ExportSettings()
     {
-        // Save all property lists before exporting
+        // Save all editor values before exporting
         foreach (var entity in _settings.CannedMessages)
         {
             foreach (var scenario in entity.Value)
             {
+                var key = $"{entity.Key}:{scenario.Key}";
+                
+                // Get value from Monaco editor if it exists
+                if (_bodyEditors.TryGetValue(key, out var editor) && scenario.Value != null)
+                {
+                    try
+                    {
+                        scenario.Value.Body = await editor.GetValue();
+                    }
+                    catch
+                    {
+                        // Editor might not be initialized yet, skip
+                    }
+                }
+                
                 SaveAppPropertiesFromList(entity.Key, scenario.Key);
                 SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
             }
@@ -426,6 +531,7 @@
             SettingsService.ImportSettingsFromJson(_importJson);
             _settings = SettingsService.GetSettings();
             InitializePropertyLists();
+            _bodyEditors.Clear(); // Clear editor cache so they reinitialize with new data
             _message = "Settings imported successfully!";
         }
         catch
@@ -492,12 +598,13 @@
         _settings.CannedMessages.Remove(entityName);
         _newScenarioNames.Remove(entityName);
         
-        // Clean up property lists cache
+        // Clean up property lists cache and editors
         var keysToRemove = _appPropsLists.Keys.Where(k => k.StartsWith($"{entityName}:")).ToList();
         foreach (var key in keysToRemove)
         {
             _appPropsLists.Remove(key);
             _brokerPropsLists.Remove(key);
+            _bodyEditors.Remove(key);
         }
         
         StateHasChanged();
@@ -540,14 +647,13 @@
             var key = $"{entityName}:{scenarioName}";
             _appPropsLists.Remove(key);
             _brokerPropsLists.Remove(key);
+            _bodyEditors.Remove(key);
             _expandedScenarios.Remove(key);
             
             StateHasChanged();
         }
     }
-}
 
-@code {
     // Helper for mapping content types to Monaco languages
     private string GetMonacoLanguage(string contentType)
     {

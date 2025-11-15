@@ -1,0 +1,86 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<div class="bg-slate-800 rounded p-3 border border-slate-700">
+    <h4 class="text-xs font-semibold text-slate-400 mb-2">Quick Values (click to copy)</h4>
+    <div class="flex flex-wrap gap-2">
+        <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 text-xs border border-slate-600" 
+                @onclick="CopyNewGuid">
+            New GUID
+        </button>
+        <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 text-xs border border-slate-600" 
+                @onclick="CopyNow">
+            Now
+        </button>
+        <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 text-xs border border-slate-600" 
+                @onclick="() => CopyRelativeTime(TimeSpan.FromMinutes(1))">
+            Now+1m
+        </button>
+        <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 text-xs border border-slate-600" 
+                @onclick="() => CopyRelativeTime(TimeSpan.FromMinutes(5))">
+            Now+5m
+        </button>
+        <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 text-xs border border-slate-600" 
+                @onclick="() => CopyRelativeTime(TimeSpan.FromHours(1))">
+            Now+1h
+        </button>
+        <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 text-xs border border-slate-600" 
+                @onclick="() => CopyRelativeTime(TimeSpan.FromDays(1))">
+            Now+1d
+        </button>
+    </div>
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="mt-2 text-xs text-green-400">@_message</div>
+    }
+</div>
+
+@code {
+    private string _message = string.Empty;
+
+    private async Task CopyNewGuid()
+    {
+        var guid = Guid.NewGuid().ToString();
+        await CopyToClipboard(guid);
+        _message = $"Copied: {guid}";
+        StateHasChanged();
+        await ClearMessage();
+    }
+
+    private async Task CopyNow()
+    {
+        var now = DateTime.UtcNow.ToString("O");
+        await CopyToClipboard(now);
+        _message = $"Copied: {now}";
+        StateHasChanged();
+        await ClearMessage();
+    }
+
+    private async Task CopyRelativeTime(TimeSpan offset)
+    {
+        var time = DateTime.UtcNow.Add(offset).ToString("O");
+        await CopyToClipboard(time);
+        _message = $"Copied: {time}";
+        StateHasChanged();
+        await ClearMessage();
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+        catch
+        {
+            _message = "Failed to copy to clipboard";
+        }
+    }
+
+    private async Task ClearMessage()
+    {
+        await Task.Delay(3000);
+        _message = string.Empty;
+        StateHasChanged();
+    }
+}
