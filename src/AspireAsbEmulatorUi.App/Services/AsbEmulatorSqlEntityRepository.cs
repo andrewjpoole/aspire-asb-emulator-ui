@@ -3,7 +3,7 @@ using Microsoft.Data.SqlClient;
 
 namespace AspireAsbEmulatorUi.App.Services;
 
-public class SqlEntityRepository
+public class AsbEmulatorSqlEntityRepository
 {
     private string _connectionString = string.Empty;
 

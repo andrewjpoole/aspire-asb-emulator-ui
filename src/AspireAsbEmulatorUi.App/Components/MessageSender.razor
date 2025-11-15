@@ -1,0 +1,440 @@
+@using AspireAsbEmulatorUi.App.Services
+@using BlazorMonaco
+@using BlazorMonaco.Editor
+@inject ServiceBusService Bus
+
+<div>
+    <h3 class="text-lg font-medium mb-2">Send Message to @DisplayName</h3>    
+
+    <label class="text-sm text-slate-400 block mb-1">Content type</label>
+    <div class="mb-3">
+        <select @bind="_contentType" @bind:after="OnContentTypeChanged" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-64">
+            <option value="application/json">application/json</option>
+            <option value="text/plain">text/plain</option>
+            <option value="application/octet-stream">application/octet-stream</option>
+            <option value="application/xml">application/xml</option>
+        </select>
+    </div>
+
+    <label class="text-sm text-slate-400 block mb-1">Body (text)</label>
+    <div class="border border-slate-700 rounded overflow-hidden" style="height: 250px; width: 100%;">
+        <StandaloneCodeEditor 
+            @ref="_editor" 
+            Id="message-body-editor"
+            CssClass="h-full w-full"
+            ConstructionOptions="EditorConstructionOptions"
+            OnDidInit="OnEditorInit" />
+    </div>
+
+    <div class="mt-4 space-y-4">
+        <div>
+            <div class="font-semibold mb-2">Broker properties</div>
+            <div class="space-y-2">
+                @foreach (var kv in _brokerProperties.Select((v, i) => (v, i)))
+                {
+                    var idx = kv.i;
+                    var key = _brokerProperties[idx].Key;
+                    EnsureTtlState(idx);
+                    <div class="flex gap-2">
+                        <div class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1.5 rounded w-48 font-medium">@key</div>
+                        @if (_brokerKeyKinds.TryGetValue(key, out var existingKind) && existingKind == BrokerValueKind.DateTime)
+                        {
+                            <input type="datetime-local" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" value="@GetDateTimeLocalValue(_brokerProperties[idx].Value)" @onchange="(e) => OnExistingDateChanged(idx, e)" />
+                        }
+                        else if (existingKind == BrokerValueKind.TimeSpan)
+                        {
+                            <input type="number" min="0" step="1" default="5" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-32" value="@_existingTtlNumber[idx]" @onchange="(e) => OnExistingTtlNumberChanged(idx, e)" />
+                            <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" value="@_existingTtlUnit[idx]" @onchange="(e) => OnExistingTtlUnitChanged(idx, e)">
+                                <option value="Seconds">Seconds</option>
+                                <option value="Minutes">Minutes</option>
+                                <option value="Hours">Hours</option>
+                                <option value="Days">Days</option>
+                            </select>
+                        }
+                        else if (existingKind == BrokerValueKind.GuidString)
+                        {
+                            <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_brokerProperties[idx].Value" />
+                            <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500" @onclick="() => GenerateGuidForExisting(idx)" title="Populate property with new Guid">+</button>
+                        }
+                        else
+                        {
+                            <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_brokerProperties[idx].Value" />
+                        }
+                        <button class="px-2 py-1 rounded border border-slate-600" @onclick="() => RemoveBroker(idx)" title="Remove this Broker property">Remove</button>
+                    </div>
+                }
+
+                <div class="flex gap-2 items-center">
+                    <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-48" @bind="_newBrokerKeySelect">
+                        @foreach (var opt in _brokerKeyKinds.Keys)
+                        {
+                            <option value="@opt">@opt</option>
+                        }
+                    </select>
+
+                    @if (_brokerKeyKinds.TryGetValue(_newBrokerKeySelect, out var nbKind) && nbKind == BrokerValueKind.DateTime)
+                    {
+                        <input type="datetime-local" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_newBrokerDateTimeLocal" />
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" @onclick="() => SetScheduleTime(1)" title="Set to 1 minute from now">+1m</button>
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" @onclick="() => SetScheduleTime(5)" title="Set to 5 minutes from now">+5m</button>
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" @onclick="() => SetScheduleTime(60)" title="Set to 1 hour from now">+1hr</button>
+                    }
+                    else if (_brokerKeyKinds.TryGetValue(_newBrokerKeySelect, out nbKind) && nbKind == BrokerValueKind.TimeSpan)
+                    {
+                        <input type="number" min="0" step="1" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-32" @bind="_newBrokerTtlNumber" />
+                        <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" @bind="_newBrokerTtlUnit">
+                            <option value="Seconds">Seconds</option>
+                            <option value="Minutes">Minutes</option>
+                            <option value="Hours">Hours</option>
+                            <option value="Days">Days</option>
+                        </select>
+                    }
+                    else if (_brokerKeyKinds.TryGetValue(_newBrokerKeySelect, out nbKind) && nbKind == BrokerValueKind.GuidString)
+                    {
+                        <input placeholder="value" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_newBrokerValue" />
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500" @onclick="GenerateGuidForNew" title="Populate with new Guid">+</button>
+                    }
+                    else
+                    {
+                        <input placeholder="value" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_newBrokerValue" />
+                    }
+
+                    <button class="px-2 py-1 rounded bg-slate-700 text-slate-100" @onclick="AddBroker">Add</button>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div class="font-semibold mb-2">Application properties</div>
+            <div class="space-y-2">
+                @foreach (var kv in _appProperties.Select((v, i) => (v, i)))
+                {
+                    <div class="flex gap-2">
+                        <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" @bind="_appProperties[kv.i].Key" />
+                        <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_appProperties[kv.i].Value" />
+                        <button class="px-2 py-1 rounded border border-slate-600" @onclick="() => RemoveApp(kv.i)">Remove</button>
+                    </div>
+                }
+
+                <div class="flex gap-2">
+                    <input placeholder="key" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" @bind="_newAppKey" />
+                    <input placeholder="value" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" @bind="_newAppValue" />
+                    <button class="px-2 py-1 rounded bg-slate-700 text-slate-100" @onclick="AddApp">Add</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-6 pt-4 border-t border-slate-700">
+        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ConfirmAndSend">Send Message</button>
+        @if (!string.IsNullOrEmpty(_result))
+        {
+            <div class="text-sm text-slate-400 mt-2">@_result</div>
+        }
+    </div>
+
+    @if (_confirmEmpty)
+    {
+        <div class="mt-3 rounded p-3 bg-yellow-800 text-yellow-100">
+            Warning: you are sending an empty message body. This action may be intentional.
+            <div class="mt-2 flex gap-2">
+                <button class="px-3 py-1 rounded bg-red-600 text-white" @onclick="Send">Proceed</button>
+                <button class="px-3 py-1 rounded bg-slate-700 text-white" @onclick="() => _confirmEmpty = false">Cancel</button>
+            </div>
+        </div>
+    }
+</div>
+
+@code{
+    [Parameter] public string SelectedEntity { get; set; } = string.Empty;
+    [Parameter] public string DisplayName { get; set; } = string.Empty;
+
+    private StandaloneCodeEditor? _editor;
+    private string _body = string.Empty;
+    private string _result = string.Empty;
+
+    private string _contentType = "application/json";
+
+    private class PropertyItem { public string Key { get; set; } = string.Empty; public string Value { get; set; } = string.Empty; }
+    private List<PropertyItem> _brokerProperties = new();
+    private List<PropertyItem> _appProperties = new();
+
+    private string _newBrokerValue = string.Empty;
+    private string _newAppKey = string.Empty;
+    private string _newAppValue = string.Empty;
+    private string _newBrokerKeySelect = "SessionId";
+    private enum BrokerValueKind { String, GuidString, DateTime, TimeSpan }
+    private readonly IReadOnlyDictionary<string, BrokerValueKind> _brokerKeyKinds = new Dictionary<string, BrokerValueKind>
+    {
+        ["SessionId"] = BrokerValueKind.GuidString,
+        ["MessageId"] = BrokerValueKind.GuidString,
+        ["CorrelationId"] = BrokerValueKind.GuidString,
+        ["Subject"] = BrokerValueKind.String,
+        ["To"] = BrokerValueKind.String,
+        ["ReplyTo"] = BrokerValueKind.String,
+        ["ReplyToSessionId"] = BrokerValueKind.GuidString,
+        ["PartitionKey"] = BrokerValueKind.String,
+        ["TimeToLive"] = BrokerValueKind.TimeSpan,
+        ["ScheduledEnqueueTime"] = BrokerValueKind.DateTime
+    };
+
+    private bool _confirmEmpty = false;
+
+    // new-broker inputs for special types
+    private DateTime? _newBrokerDateTimeLocal;
+    private double _newBrokerTtlNumber = 0;
+    private string _newBrokerTtlUnit = "Seconds";
+
+    // per-existing-row TTL state
+    private List<double> _existingTtlNumber = new();
+    private List<string> _existingTtlUnit = new();
+
+    private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
+    {
+        return new StandaloneEditorConstructionOptions
+        {
+            AutomaticLayout = true,
+            Language = GetMonacoLanguage(_contentType),
+            Theme = "vs-dark",
+            Value = _body,
+            Minimap = new EditorMinimapOptions { Enabled = false },
+            ScrollBeyondLastLine = false,
+            FontSize = 13,
+            TabSize = 2
+        };
+    }
+
+    private async Task OnEditorInit()
+    {
+        if (_editor != null)
+        {
+            await _editor.SetValue(_body);
+        }
+    }
+
+    private async Task OnContentTypeChanged()
+    {
+        if (_editor != null)
+        {
+            var model = await _editor.GetModel();
+            await Global.SetModelLanguage(model, GetMonacoLanguage(_contentType));
+        }
+    }
+
+    private string GetMonacoLanguage(string contentType)
+    {
+        return contentType switch
+        {
+            "application/json" => "json",
+            "application/xml" => "xml",
+            "text/plain" => "plaintext",
+            _ => "plaintext"
+        };
+    }
+
+    private string GetDateTimeLocalValue(string iso)
+    {
+        if (string.IsNullOrWhiteSpace(iso)) return string.Empty;
+        if (DateTimeOffset.TryParse(iso, out var dto))
+        {
+            var local = dto.ToLocalTime().DateTime;
+            return local.ToString("yyyy-MM-ddTHH:mm");
+        }
+        if (DateTime.TryParse(iso, out var dt)) return dt.ToString("yyyy-MM-ddTHH:mm");
+        return string.Empty;
+    }
+
+    private void OnExistingDateChanged(int idx, ChangeEventArgs e)
+    {
+        if (e?.Value == null) return;
+        if (DateTime.TryParse(e.Value.ToString(), out var dt))
+        {
+            var dto = new DateTimeOffset(dt);
+            _brokerProperties[idx].Value = dto.ToString("o");
+        }
+    }
+
+    private void EnsureTtlState(int idx)
+    {
+        while (_existingTtlNumber.Count <= idx) { _existingTtlNumber.Add(0); _existingTtlUnit.Add("Seconds"); }
+        if (_existingTtlNumber[idx] == 0 && !string.IsNullOrWhiteSpace(_brokerProperties[idx].Value))
+        {
+            if (double.TryParse(_brokerProperties[idx].Value, out var seconds))
+            {
+                _existingTtlNumber[idx] = seconds; _existingTtlUnit[idx] = "Seconds";
+            }
+            else if (TimeSpan.TryParse(_brokerProperties[idx].Value, out var ts))
+            {
+                _existingTtlNumber[idx] = ts.TotalSeconds; _existingTtlUnit[idx] = "Seconds";
+            }
+        }
+    }
+
+    private void OnExistingTtlNumberChanged(int idx, ChangeEventArgs e)
+    {
+        if (!double.TryParse(e?.Value?.ToString(), out var val)) return;
+        EnsureTtlState(idx);
+        _existingTtlNumber[idx] = val;
+        var unit = _existingTtlUnit[idx];
+        var seconds = val * (unit == "Seconds" ? 1 : unit == "Minutes" ? 60 : unit == "Hours" ? 3600 : 86400);
+        _brokerProperties[idx].Value = seconds.ToString();
+    }
+
+    private void OnExistingTtlUnitChanged(int idx, ChangeEventArgs e)
+    {
+        var newUnit = e?.Value?.ToString() ?? "Seconds";
+        EnsureTtlState(idx);
+        if (double.TryParse(_brokerProperties[idx].Value, out var seconds))
+        {
+            var display = newUnit == "Seconds" ? seconds : newUnit == "Minutes" ? seconds / 60 : newUnit == "Hours" ? seconds / 3600 : seconds / 86400;
+            _existingTtlNumber[idx] = Math.Floor(display);
+            _existingTtlUnit[idx] = newUnit;
+        }
+        else
+        {
+            _existingTtlUnit[idx] = newUnit;
+        }
+    }
+
+    private void GenerateGuidForExisting(int idx)
+    {
+        _brokerProperties[idx].Value = Guid.NewGuid().ToString();
+    }
+
+    private void GenerateGuidForNew()
+    {
+        _newBrokerValue = Guid.NewGuid().ToString();
+    }
+
+    private void SetScheduleTime(int minutes)
+    {
+        _newBrokerDateTimeLocal = DateTime.Now.AddMinutes(minutes);
+    }
+
+    private void AddBroker()
+    {
+        var keyToAdd = _newBrokerKeySelect;
+        if (string.IsNullOrWhiteSpace(keyToAdd)) return;
+
+        // prevent duplicates
+        if (_brokerProperties.Any(p => string.Equals(p.Key, keyToAdd, StringComparison.OrdinalIgnoreCase)))
+        {
+            _result = $"Broker property '{keyToAdd}' already added.";
+            return;
+        }
+
+        var kind = _brokerKeyKinds.TryGetValue(keyToAdd, out var k) ? k : BrokerValueKind.String;
+        string value = string.Empty;
+        if (kind == BrokerValueKind.DateTime)
+        {
+            if (!_newBrokerDateTimeLocal.HasValue)
+            {
+                _result = "Select a scheduled date/time before adding.";
+                return;
+            }
+            value = new DateTimeOffset(_newBrokerDateTimeLocal.Value).ToString("o");
+        }
+        else if (kind == BrokerValueKind.TimeSpan)
+        {
+            var seconds = _newBrokerTtlNumber;
+            seconds *= _newBrokerTtlUnit == "Seconds" ? 1 : _newBrokerTtlUnit == "Minutes" ? 60 : _newBrokerTtlUnit == "Hours" ? 3600 : 86400;
+            value = seconds.ToString();
+        }
+        else
+        {
+            value = _newBrokerValue ?? string.Empty;
+        }
+
+        _brokerProperties.Add(new PropertyItem { Key = keyToAdd, Value = value });
+
+        // clear inputs
+        _newBrokerValue = string.Empty;
+        _newBrokerDateTimeLocal = null;
+        _newBrokerTtlNumber = 0;
+        _newBrokerTtlUnit = "Seconds";
+
+        // Select next available property
+        var nextAvailable = _brokerKeyKinds.Keys
+            .FirstOrDefault(k => !_brokerProperties.Any(p => string.Equals(p.Key, k, StringComparison.OrdinalIgnoreCase)));
+        
+        if (!string.IsNullOrWhiteSpace(nextAvailable))
+        {
+            _newBrokerKeySelect = nextAvailable;
+        }
+    }
+
+    private void RemoveBroker(int idx)
+    {
+        if (idx >= 0 && idx < _brokerProperties.Count) _brokerProperties.RemoveAt(idx);
+    }
+
+    private void AddApp()
+    {
+        if (string.IsNullOrWhiteSpace(_newAppKey)) return;
+        _appProperties.Add(new PropertyItem { Key = _newAppKey, Value = _newAppValue });
+        _newAppKey = _newAppValue = string.Empty;
+    }
+
+    private void RemoveApp(int idx)
+    {
+        if (idx >= 0 && idx < _appProperties.Count) _appProperties.RemoveAt(idx);
+    }
+
+    private async Task ConfirmAndSend()
+    {
+        // Get the current value from the editor first
+        if (_editor != null)
+        {
+            _body = await _editor.GetValue();
+        }
+
+        if (string.IsNullOrWhiteSpace(_body))
+        {
+            _confirmEmpty = true;
+            return;
+        }
+        
+        await Send();
+    }
+
+    private async Task Send()
+    {
+        _confirmEmpty = false;
+
+        if (string.IsNullOrWhiteSpace(SelectedEntity))
+        {
+            _result = "Select a target entity first.";
+            return;
+        }
+
+        try
+        {
+            // Get the current value from the editor
+            if (_editor != null)
+            {
+                _body = await _editor.GetValue();
+            }
+
+            var ct = _contentType;
+
+            var appProps = _appProperties.Where(kv => !string.IsNullOrWhiteSpace(kv.Key)).ToDictionary(k => k.Key, v => (object?)v.Value);
+            var brokerProps = _brokerProperties.Where(kv => !string.IsNullOrWhiteSpace(kv.Key)).ToDictionary(k => k.Key, v => (object?)v.Value);
+
+            if (!string.IsNullOrWhiteSpace(ct)) brokerProps["ContentType"] = ct;
+
+            await Bus.SendMessageAsync(SelectedEntity, _body, appProps, brokerProps);
+            _result = $"Sent at {DateTime.Now:HH:mm:ss}";
+            
+            // Clear the editor
+            if (_editor != null)
+            {
+                await _editor.SetValue(string.Empty);
+            }
+            _body = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _result = $"Error: {ex.Message}";
+        }
+    }
+}

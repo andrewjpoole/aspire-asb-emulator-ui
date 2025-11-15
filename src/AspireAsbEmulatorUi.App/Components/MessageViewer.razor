@@ -1,0 +1,185 @@
+@using AspireAsbEmulatorUi.App.Services
+@using AspireAsbEmulatorUi.App.Models
+@using System.Text.Json
+@inject ServiceBusService Bus
+@inject IJSRuntime JS
+
+<div>
+    <h3 class="text-lg font-medium mb-2">Viewer for @DisplayName</h3>
+
+    <div class="flex items-center gap-3 mb-3">
+        <div class="flex rounded bg-slate-700 p-1">
+            <button class=@($"px-3 py-1 rounded-l text-sm {(_isDlqSelected ? "text-slate-400" : "bg-blue-600 text-white")}") @onclick="() => SelectDlq(false)">Main</button>
+            <button class=@($"px-3 py-1 rounded-r text-sm {(_isDlqSelected ? "bg-blue-600 text-white" : "text-slate-400")}") @onclick="() => SelectDlq(true)">Dead-letter</button>
+        </div>
+
+        <!-- Peek/Receive toggle -->
+        <div class="flex rounded bg-slate-700 p-1">
+            <button class=@($"px-3 py-1 rounded-l text-sm {(!_isReceive ? "bg-blue-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(false)">Peek</button>
+            <button class=@($"px-3 py-1 rounded-r text-sm {(_isReceive ? "bg-red-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(true)">Receive</button>
+        </div>
+
+        <input type="number" min="1" max="100" @bind="_maxMessages" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" />
+        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="LoadMessages">Load</button>
+    </div>
+
+    @if (_isReceive)
+    {
+        <div class="rounded p-3 mb-3 bg-red-800 text-red-100">
+            Warning: Receive mode is destructive and will remove messages from the queue.
+        </div>
+    }
+
+    <div class="space-y-3">
+        @if (_messages is null)
+        {
+            <div class="text-slate-400">Messages not loaded.</div>
+        }
+        else if (!_messages.Any())
+        {
+            <div class="text-slate-400">No messages.</div>
+        }
+        else
+        {
+            foreach (var m in _messages)
+            {
+                <div class="bg-slate-700 p-3 rounded">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <div class="text-sm font-semibold">Sequence: @m.SequenceNumber</div>
+                            <div class="text-xs text-slate-400">Correlation: @m.CorrelationId</div>
+                            <div class="text-xs text-slate-400">Enqueued: @m.EnqueuedTime</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleBroker(m)" title="Show Broker Props">Broker</button>
+                            <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleApp(m)" title="Show Application Props">Application</button>
+                            <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => CopyMessage(m)" title="Copy message to clipboard">Copy</button>
+                        </div>
+                    </div>
+
+                    <div class="mt-2 bg-slate-800 p-2 rounded text-sm">
+                        <div class="font-mono whitespace-pre-wrap">@m.Body</div>
+                    </div>
+
+                    @if (_showBroker.Contains(m.SequenceNumber))
+                    {
+                        <div class="mt-2 bg-slate-800 p-2 rounded text-sm">
+                            <div class="font-semibold">Broker Properties</div>
+                            <ul class="list-disc list-inside">
+                                @foreach (var kv in m.BrokerProperties)
+                                {
+                                    <li>@kv.Key: @System.Text.Json.JsonSerializer.Serialize(kv.Value)</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    @if (_showApp.Contains(m.SequenceNumber))
+                    {
+                        <div class="mt-2 bg-slate-800 p-2 rounded text-sm">
+                            <div class="font-semibold">Application Properties</div>
+                            <ul class="list-disc list-inside">
+                                @foreach (var kv in m.ApplicationProperties)
+                                {
+                                    <li>@kv.Key: @System.Text.Json.JsonSerializer.Serialize(kv.Value)</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code{
+    [Parameter] public string SelectedEntity { get; set; } = string.Empty;
+    [Parameter] public string DisplayName { get; set; } = string.Empty;
+
+    private int _maxMessages = 20;
+    private List<DisplayedMessage>? _messages;
+    private bool _isDlqSelected = false;
+    private bool _isReceive = false; // false = peek, true = receive
+
+    private HashSet<long> _showBroker = new();
+    private HashSet<long> _showApp = new();
+
+    protected override void OnParametersSet()
+    {
+        // Clear messages when selection changes
+        _messages = null;
+    }
+
+    private void SelectDlq(bool dlq)
+    {
+        _isDlqSelected = dlq;
+        _messages = null;
+    }
+
+    private void SelectReceive(bool receive)
+    {
+        _isReceive = receive;
+        _messages = null;
+    }
+
+    private void ToggleBroker(DisplayedMessage m)
+    {
+        if (_showBroker.Contains(m.SequenceNumber)) _showBroker.Remove(m.SequenceNumber);
+        else _showBroker.Add(m.SequenceNumber);
+    }
+
+    private void ToggleApp(DisplayedMessage m)
+    {
+        if (_showApp.Contains(m.SequenceNumber)) _showApp.Remove(m.SequenceNumber);
+        else _showApp.Add(m.SequenceNumber);
+    }
+
+    private async Task LoadMessages()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        _messages = new List<DisplayedMessage>();
+        try
+        {
+            var target = SelectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
+            if (!_isReceive)
+            {
+                var msgs = await Bus.PeekMessagesAsync(target, _maxMessages);
+                _messages.AddRange(msgs);
+            }
+            else
+            {
+                var msgs = await Bus.ReceiveMessagesAsync(target, _maxMessages);
+                _messages.AddRange(msgs);
+            }
+        }
+        catch (Exception ex)
+        {
+            _messages.Add(new DisplayedMessage { Body = $"Error: {ex.Message}" });
+        }
+    }
+
+    private async Task CopyMessage(DisplayedMessage m)
+    {
+        // Build a nicely formatted string
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"MessageId: {m.MessageId}");
+        sb.AppendLine($"SequenceNumber: {m.SequenceNumber}");
+        sb.AppendLine($"CorrelationId: {m.CorrelationId}");
+        sb.AppendLine($"Enqueued: {m.EnqueuedTime}");
+        sb.AppendLine($"ExpiresAt: {m.ExpiresAt}");
+        sb.AppendLine("--- Broker Properties ---");
+        foreach (var kv in m.BrokerProperties)
+        {
+            sb.AppendLine($"{kv.Key}: {System.Text.Json.JsonSerializer.Serialize(kv.Value)}");
+        }
+        sb.AppendLine("--- Application Properties ---");
+        foreach (var kv in m.ApplicationProperties)
+        {
+            sb.AppendLine($"{kv.Key}: {System.Text.Json.JsonSerializer.Serialize(kv.Value)}");
+        }
+        sb.AppendLine("--- Body ---");
+        sb.AppendLine(m.Body);
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+    }
+}

@@ -9,7 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.3.0" />
+    <PackageReference Include="BlazorMonaco" Version="3.4.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.0" />
   </ItemGroup>
 
 </Project>

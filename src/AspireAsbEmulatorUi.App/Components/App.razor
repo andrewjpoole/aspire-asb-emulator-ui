@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["AspireAsbEmulatorUi.App.styles.css"]" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="_content/BlazorMonaco/lib/monaco-editor/min/vs/editor/editor.main.css" rel="stylesheet" />
     <ImportMap />
     <HeadOutlet />
 </head>
@@ -17,6 +18,10 @@
     <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>var require = { paths: { 'vs': '_content/BlazorMonaco/lib/monaco-editor/min/vs' } };</script>
+    <script src="_content/BlazorMonaco/lib/monaco-editor/min/vs/loader.js"></script>
+    <script src="_content/BlazorMonaco/lib/monaco-editor/min/vs/editor/editor.main.js"></script>
+    <script src="_content/BlazorMonaco/jsInterop.js"></script>
 </body>
 
 </html>

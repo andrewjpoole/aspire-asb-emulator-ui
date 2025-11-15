@@ -1,7 +1,6 @@
 using AspireAsbEmulatorUi.App.Components;
 using AspireAsbEmulatorUi.App.Services;
 using System.Net.Sockets;
-using System.Threading;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,9 +9,9 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 // Register application services
-builder.Services.AddSingleton<SqlEntityRepository>(sp =>
+builder.Services.AddSingleton(sp =>
 {
-    var repo = new SqlEntityRepository();
+    var repo = new AsbEmulatorSqlEntityRepository();
     var cfg = sp.GetRequiredService<IConfiguration>();
 
     // Prefer a full connection string if provided
@@ -54,7 +53,8 @@ builder.Services.AddSingleton<SqlEntityRepository>(sp =>
 builder.Services.AddSingleton<ServiceBusService>(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
-    var logger = sp.GetRequiredService<ILogger<Program>>();
+    var logger = sp.GetRequiredService<ILogger<ServiceBusService>>();
+    var repo = sp.GetRequiredService<AsbEmulatorSqlEntityRepository>();
     
     // Get the resource name to build the connection string key
     var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? "myservicebus";
@@ -78,7 +78,7 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
         logger.LogWarning("No ASB connection string found for resource: {ResourceName}", resourceName);
     }
     
-    return new ServiceBusService(cs ?? string.Empty);
+    return new ServiceBusService(cs ?? string.Empty, logger, repo);
 });
 
 var app = builder.Build();
