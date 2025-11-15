@@ -81,6 +81,8 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
     return new ServiceBusService(cs ?? string.Empty, logger, repo);
 });
 
+builder.Services.AddSingleton<SettingsService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

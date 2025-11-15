@@ -1,0 +1,562 @@
+@page "/settings"
+@rendermode InteractiveServer
+@using AspireAsbEmulatorUi.App.Models
+@using AspireAsbEmulatorUi.App.Services
+@using System.Text.Json
+@using BlazorMonaco
+@using BlazorMonaco.Editor
+@inject SettingsService SettingsService
+@inject NavigationManager Navigation
+
+<PageTitle>Settings</PageTitle>
+
+<main class="max-w-screen-2xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">            
+            <h1 class="text-2xl font-semibold">ASB Emulator Explorer Settings</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ExportSettings">Export JSON</button>
+            <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="SaveSettings">Save Settings</button>
+            <button class="px-3 py-2 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center gap-2" @onclick="GoBack">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="white">
+                    <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+                <span class="text-sm">Back to explorer</span>
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_message))
+    {
+        <div class="mb-4 p-3 rounded bg-blue-800 text-blue-100">
+            @_message
+        </div>
+    }
+
+    <div class="space-y-6">
+        <!-- Content Types Card -->
+        <div class="bg-slate-800 rounded p-6">
+            <h2 class="text-xl font-semibold mb-4">Content Types</h2>
+            <div class="space-y-2">
+                @foreach (var ct in _settings.ContentTypes.Select((v, i) => (v, i)))
+                {
+                    <div class="flex gap-2 items-center">
+                        <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_settings.ContentTypes[ct.i]" />
+                        <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveContentType(ct.i)">Remove</button>
+                    </div>
+                }
+                <div class="flex gap-2 items-center">
+                    <input placeholder="New content type" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newContentType" />
+                    <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddContentType">Add</button>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label class="text-sm text-slate-400 block mb-2">Default Content Type</label>
+                <select @bind="_settings.DefaultContentType" class="bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded w-full">
+                    @foreach (var ct in _settings.ContentTypes)
+                    {
+                        <option value="@ct">@ct</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <!-- Common Application Properties Card -->
+        <div class="bg-slate-800 rounded p-6">
+            <h2 class="text-xl font-semibold mb-4">Common Application Properties</h2>
+            <p class="text-sm text-slate-400 mb-3">Add frequently used application properties. Multiple properties with the same name are allowed.</p>
+            <div class="space-y-2">
+                @foreach (var prop in _settings.CommonApplicationProperties.Select((kv, i) => (kv, i)))
+                {
+                    <div class="flex gap-2 items-center">
+                        <input class="w-1/3 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                               value="@prop.kv.Key" readonly title="Property name" />
+                        <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                               value="@prop.kv.Value" readonly title="Property value" />
+                        <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveCommonProperty(prop.i)">Remove</button>
+                    </div>
+                }
+                <div class="flex gap-2 items-center">
+                    <input placeholder="Property name" class="w-1/3 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newCommonPropKey" />
+                    <input placeholder="Property value" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newCommonPropValue" />
+                    <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddCommonProperty">Add</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canned Messages Card -->
+        <div class="bg-slate-800 rounded p-6">
+            <h2 class="text-xl font-semibold mb-4">Canned Messages</h2>
+            <div class="space-y-4">
+                @foreach (var entity in _settings.CannedMessages)
+                {
+                    <div class="bg-slate-700 rounded p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold">Entity: @entity.Key</h4>
+                            <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="() => RemoveEntity(entity.Key)">Remove Entity</button>
+                        </div>
+                        
+                        @foreach (var scenario in entity.Value)
+                        {
+                            var scenarioKey = $"{entity.Key}:{scenario.Key}";
+                            <div class="bg-slate-800 rounded p-3 mb-2">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-medium">Scenario: @scenario.Key</span>
+                                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700 text-sm" @onclick="() => RemoveScenario(entity.Key, scenario.Key)">Remove</button>
+                                </div>
+                                <button class="text-sm px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => ToggleScenarioDetails(entity.Key, scenario.Key)">
+                                    @(_expandedScenarios.Contains(scenarioKey) ? "Hide Details" : "Show Details")
+                                </button>
+                                
+                                @if (_expandedScenarios.Contains(scenarioKey))
+                                {
+                                    @if (scenario.Value != null && scenario.Value.ContentType != null && scenario.Value.Body != null)
+                                    {
+                                        <div class="mt-3 space-y-4">
+                                            <div>
+                                                <label class="text-xs text-slate-400 block mb-1">Content Type</label>
+                                                <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" @bind="scenario.Value.ContentType" />
+                                            </div>
+                                            <div>
+                                                <label class="text-xs text-slate-400 block mb-1">Body</label>
+                                                <textarea rows="6" class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm font-mono" @bind="scenario.Value.Body"></textarea>
+                                            </div>
+            
+                                            @if (_appPropsLists.ContainsKey(scenarioKey))
+                                            {
+                                                <div class="border-t border-slate-700 pt-3">
+                                                    <ApplicationPropertiesEditor 
+                                                        Title="Application Properties"
+                                                        Properties="@_appPropsLists[scenarioKey]"
+                                                        OnPropertiesChanged="@(() => SaveAppPropertiesFromList(entity.Key, scenario.Key))" />
+                                                </div>
+                                            }
+            
+                                            @if (_brokerPropsLists.ContainsKey(scenarioKey))
+                                            {
+                                                <div class="border-t border-slate-700 pt-3">
+                                                    <BrokerPropertiesEditor 
+                                                        Title="Broker Properties"
+                                                        Properties="@_brokerPropsLists[scenarioKey]"
+                                                        OnPropertiesChanged="@(() => SaveBrokerPropertiesFromList(entity.Key, scenario.Key))"
+                                                        OnMessage="@((m) => { _message = m; StateHasChanged(); })" />
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="mt-3 p-3 rounded bg-slate-900 text-slate-400">
+                                            Message data is missing or corrupted. 
+                                            <button class="ml-2 px-2 py-1 rounded bg-blue-600 text-white text-xs" @onclick="() => InitializeMessage(entity.Key, scenario.Key)">Initialize</button>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                        
+                        <div class="mt-2">
+                            @if (!_newScenarioNames.ContainsKey(entity.Key))
+                            {
+                                _newScenarioNames[entity.Key] = string.Empty;
+                            }
+                            <input placeholder="New scenario name" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" 
+                                   @bind="_newScenarioNames[entity.Key]" />
+                            <button class="ml-2 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm" @onclick="() => AddScenario(entity.Key)">Add Scenario</button>
+                        </div>
+                    </div>
+                }
+                
+                <div class="flex gap-2">
+                    <input placeholder="Enter an ASB Entity name to add some canned messages for..." class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newEntityName" />
+                    <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddEntity">Add Entity</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import/Export JSON Card -->
+        <div class="bg-slate-800 rounded p-6">
+            <h2 class="text-xl font-semibold mb-4">Import/Export Settings as JSON</h2>
+            <p class="text-sm text-slate-400 mb-3">Export your settings to backup or share, or import settings from JSON.</p>
+            <textarea rows="10" class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded font-mono text-sm" 
+                      @bind="_importJson" 
+                      placeholder="Paste settings JSON here..."></textarea>
+            <div class="mt-3 flex gap-2">
+                <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ImportSettings">Import JSON</button>
+                <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => _importJson = string.Empty">Clear</button>
+            </div>
+        </div>
+    </div>
+</main>
+
+@code {
+    private AppSettings _settings = new();
+    private string _message = string.Empty;
+    private string _importJson = string.Empty;
+    
+    private string _newContentType = string.Empty;
+    private string _newCommonPropKey = string.Empty;
+    private string _newCommonPropValue = string.Empty;
+    private string _newEntityName = string.Empty;
+    private Dictionary<string, string> _newScenarioNames = new();
+    
+    private HashSet<string> _expandedScenarios = new();
+    
+    // Property lists cache for the editors
+    private Dictionary<string, List<ApplicationPropertiesEditor.PropertyItem>> _appPropsLists = new();
+    private Dictionary<string, List<BrokerPropertiesEditor.PropertyItem>> _brokerPropsLists = new();
+    
+    protected override void OnInitialized()
+    {
+        _settings = SettingsService.GetSettings();
+        InitializePropertyLists();
+    }
+
+    private void InitializePropertyLists()
+    {
+        _appPropsLists.Clear();
+        _brokerPropsLists.Clear();
+        
+        foreach (var entity in _settings.CannedMessages)
+        {
+            foreach (var scenario in entity.Value)
+            {
+                var key = $"{entity.Key}:{scenario.Key}";
+                
+                var msg = scenario.Value;
+                if (msg == null)
+                {
+                    _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
+                    _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
+                    continue;
+                }
+                
+                // Initialize app properties list
+                _appPropsLists[key] = (msg.ApplicationProperties ?? new Dictionary<string, object>())
+                    .Select(kv => new ApplicationPropertiesEditor.PropertyItem 
+                    { 
+                        Key = kv.Key, 
+                        Value = kv.Value?.ToString() ?? string.Empty 
+                    })
+                    .ToList();
+                
+                // Initialize broker properties list
+                _brokerPropsLists[key] = (msg.BrokerProperties ?? new Dictionary<string, object>())
+                    .Select(kv => new BrokerPropertiesEditor.PropertyItem 
+                    { 
+                        Key = kv.Key, 
+                        Value = kv.Value?.ToString() ?? string.Empty 
+                    })
+                    .ToList();
+            }
+         }
+     }
+
+    private List<ApplicationPropertiesEditor.PropertyItem> GetAppPropertiesList(string entityName, string scenarioName)
+    {
+        var key = $"{entityName}:{scenarioName}";
+        if (!_appPropsLists.ContainsKey(key))
+        {
+            _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
+        }
+        return _appPropsLists[key];
+    }
+
+    private List<BrokerPropertiesEditor.PropertyItem> GetBrokerPropertiesList(string entityName, string scenarioName)
+    {
+        var key = $"{entityName}:{scenarioName}";
+        if (!_brokerPropsLists.ContainsKey(key))
+        {
+            _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
+        }
+        return _brokerPropsLists[key];
+    }
+
+    private void SaveAppPropertiesFromList(string entityName, string scenarioName)
+    {
+        var key = $"{entityName}:{scenarioName}";
+        if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+            scenarios.TryGetValue(scenarioName, out var msg) &&
+            msg != null &&
+            _appPropsLists.TryGetValue(key, out var list))
+        {
+            msg.ApplicationProperties = list
+                .Where(p => !string.IsNullOrWhiteSpace(p.Key))
+                .ToDictionary(p => p.Key, p => (object)p.Value);
+        }
+    }
+
+    private void SaveBrokerPropertiesFromList(string entityName, string scenarioName)
+    {
+        var key = $"{entityName}:{scenarioName}";
+        if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+            scenarios.TryGetValue(scenarioName, out var msg) &&
+            msg != null &&
+            _brokerPropsLists.TryGetValue(key, out var list))
+        {
+            msg.BrokerProperties = list
+                .Where(p => !string.IsNullOrWhiteSpace(p.Key))
+                .ToDictionary(p => p.Key, p => (object)p.Value);
+        }
+    }
+
+    private void InitializeMessage(string entityName, string scenarioName)
+    {
+        if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+            scenarios.TryGetValue(scenarioName, out var msg))
+        {
+            if (msg == null)
+            {
+                msg = new CannedMessage();
+                scenarios[scenarioName] = msg;
+            }
+
+            msg.ContentType ??= _settings.DefaultContentType;
+            msg.Body ??= "{}";
+            msg.ApplicationProperties ??= new Dictionary<string, object>();
+            msg.BrokerProperties ??= new Dictionary<string, object>();
+
+            var key = $"{entityName}:{scenarioName}";
+            _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
+            _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
+
+            _message = "Message initialized successfully";
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleScenarioDetails(string entityName, string scenarioName)
+    {
+        var key = $"{entityName}:{scenarioName}";
+        if (_expandedScenarios.Contains(key))
+        {
+            _expandedScenarios.Remove(key);
+        }
+        else
+        {
+            // Ensure the message exists and is properly initialized before expanding
+            if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+                scenarios.TryGetValue(scenarioName, out var msg))
+            {
+                if (msg == null || msg.ContentType == null || msg.Body == null)
+                {
+                    _message = "Cannot show details: message data is missing or corrupted. Click Initialize to fix.";
+                    StateHasChanged();
+                    return;
+                }
+                
+                // Ensure properties are initialized
+                msg.ApplicationProperties ??= new Dictionary<string, object>();
+                msg.BrokerProperties ??= new Dictionary<string, object>();
+                
+                // Ensure property lists exist
+                if (!_appPropsLists.ContainsKey(key))
+                {
+                    _appPropsLists[key] = (msg.ApplicationProperties ?? new Dictionary<string, object>())
+                        .Select(kv => new ApplicationPropertiesEditor.PropertyItem 
+                        { 
+                            Key = kv.Key, 
+                            Value = kv.Value?.ToString() ?? string.Empty 
+                        })
+                        .ToList();
+                }
+                if (!_brokerPropsLists.ContainsKey(key))
+                {
+                    _brokerPropsLists[key] = (msg.BrokerProperties ?? new Dictionary<string, object>())
+                        .Select(kv => new BrokerPropertiesEditor.PropertyItem 
+                        { 
+                            Key = kv.Key, 
+                            Value = kv.Value?.ToString() ?? string.Empty 
+                        })
+                        .ToList();
+                }
+            }
+            
+            _expandedScenarios.Add(key);
+        }
+        
+        StateHasChanged();
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task SaveSettings()
+    {
+        // Save all property lists back to the settings before saving
+        foreach (var entity in _settings.CannedMessages)
+        {
+            foreach (var scenario in entity.Value)
+            {
+                SaveAppPropertiesFromList(entity.Key, scenario.Key);
+                SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
+            }
+        }
+        
+        SettingsService.UpdateSettings(_settings);
+        _message = "Settings saved successfully!";
+        StateHasChanged();
+        await Task.Delay(3000);
+        _message = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task ExportSettings()
+    {
+        // Save all property lists before exporting
+        foreach (var entity in _settings.CannedMessages)
+        {
+            foreach (var scenario in entity.Value)
+            {
+                SaveAppPropertiesFromList(entity.Key, scenario.Key);
+                SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
+            }
+        }
+        _importJson = SettingsService.ExportSettingsAsJson();
+    }
+
+    private void ImportSettings()
+    {
+        try
+        {
+            SettingsService.ImportSettingsFromJson(_importJson);
+            _settings = SettingsService.GetSettings();
+            InitializePropertyLists();
+            _message = "Settings imported successfully!";
+        }
+        catch
+        {
+            _message = "Error: Invalid JSON format";
+        }
+    }
+
+    // Content Types
+    private void AddContentType()
+    {
+        if (!string.IsNullOrWhiteSpace(_newContentType) && !_settings.ContentTypes.Contains(_newContentType))
+        {
+            _settings.ContentTypes.Add(_newContentType);
+            _newContentType = string.Empty;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveContentType(int index)
+    {
+        if (index >= 0 && index < _settings.ContentTypes.Count)
+        {
+            _settings.ContentTypes.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+
+    // Common Properties
+    private void AddCommonProperty()
+    {
+        if (!string.IsNullOrWhiteSpace(_newCommonPropKey))
+        {
+            _settings.CommonApplicationProperties.Add(new KeyValuePair<string, string>(_newCommonPropKey, _newCommonPropValue ?? string.Empty));
+            _newCommonPropKey = string.Empty;
+            _newCommonPropValue = string.Empty;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveCommonProperty(int index)
+    {
+        if (index >= 0 && index < _settings.CommonApplicationProperties.Count)
+        {
+            _settings.CommonApplicationProperties.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+
+    // Entities
+    private void AddEntity()
+    {
+        if (!string.IsNullOrWhiteSpace(_newEntityName) && !_settings.CannedMessages.ContainsKey(_newEntityName))
+        {
+            _settings.CannedMessages[_newEntityName] = new Dictionary<string, CannedMessage>();
+            _newScenarioNames[_newEntityName] = string.Empty;
+            _newEntityName = string.Empty;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveEntity(string entityName)
+    {
+        _settings.CannedMessages.Remove(entityName);
+        _newScenarioNames.Remove(entityName);
+        
+        // Clean up property lists cache
+        var keysToRemove = _appPropsLists.Keys.Where(k => k.StartsWith($"{entityName}:")).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _appPropsLists.Remove(key);
+            _brokerPropsLists.Remove(key);
+        }
+        
+        StateHasChanged();
+    }
+
+    // Scenarios
+    private void AddScenario(string entityName)
+    {
+        if (_newScenarioNames.TryGetValue(entityName, out var scenarioName) && 
+            !string.IsNullOrWhiteSpace(scenarioName) && 
+            _settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
+            !scenarios.ContainsKey(scenarioName))
+        {
+            var newMsg = new CannedMessage
+            {
+                ContentType = _settings.DefaultContentType,
+                Body = "{}",
+                ApplicationProperties = new Dictionary<string, object>(),
+                BrokerProperties = new Dictionary<string, object>()
+            };
+            
+            scenarios[scenarioName] = newMsg;
+            _newScenarioNames[entityName] = string.Empty;
+            
+            // Initialize empty property lists for the new scenario
+            var key = $"{entityName}:{scenarioName}";
+            _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
+            _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
+            
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveScenario(string entityName, string scenarioName)
+    {
+        if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios))
+        {
+            scenarios.Remove(scenarioName);
+            
+            var key = $"{entityName}:{scenarioName}";
+            _appPropsLists.Remove(key);
+            _brokerPropsLists.Remove(key);
+            _expandedScenarios.Remove(key);
+            
+            StateHasChanged();
+        }
+    }
+}
+
+@code {
+    // Helper for mapping content types to Monaco languages
+    private string GetMonacoLanguage(string contentType)
+    {
+        return contentType switch
+        {
+            "application/json" => "json",
+            "application/xml" => "xml",
+            "text/plain" => "plaintext",
+            _ => "plaintext",
+        };
+    }
+}

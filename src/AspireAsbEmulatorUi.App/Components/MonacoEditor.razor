@@ -1,0 +1,82 @@
+@using BlazorMonaco
+@using BlazorMonaco.Editor
+
+<div class="border border-slate-700 rounded overflow-hidden" style="height:100%; width:100%;">
+    <StandaloneCodeEditor @ref="_editor"
+                          Id="@Id"
+                          CssClass="h-full w-full"
+                          ConstructionOptions="EditorOptions"
+                          OnDidInit="OnDidInit" />
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [Parameter] public string InitialValue { get; set; } = string.Empty;
+    [Parameter] public string Language { get; set; } = "plaintext";
+
+    private StandaloneCodeEditor? _editor;
+
+    private StandaloneEditorConstructionOptions EditorOptions(StandaloneCodeEditor editor)
+    {
+        return new StandaloneEditorConstructionOptions
+        {
+            AutomaticLayout = true,
+            Language = Language,
+            Theme = "vs-dark",
+            Value = InitialValue ?? string.Empty,
+            Minimap = new EditorMinimapOptions { Enabled = false },
+            ScrollBeyondLastLine = false,
+            FontSize = 13,
+            TabSize = 2
+        };
+    }
+
+    private async Task OnDidInit()
+    {
+        if (_editor != null)
+        {
+            // ensure value and language are set
+            await _editor.SetValue(InitialValue ?? string.Empty);
+            var model = await _editor.GetModel();
+            await Global.SetModelLanguage(model, Language);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // If editor already initialized, apply updated parameters
+        if (_editor != null)
+        {
+            try
+            {
+                await SetValueAsync(InitialValue ?? string.Empty);
+                await SetLanguageAsync(Language ?? "plaintext");
+            }
+            catch
+            {
+                // ignore failures during parameter updates
+            }
+        }
+
+        await base.OnParametersSetAsync();
+    }
+
+    public async Task<string> GetValueAsync()
+    {
+        if (_editor == null) return string.Empty;
+        return await _editor.GetValue();
+    }
+
+    public async Task SetLanguageAsync(string language)
+    {
+        if (_editor == null) return;
+        var model = await _editor.GetModel();
+        await Global.SetModelLanguage(model, language);
+    }
+
+    public async Task SetValueAsync(string value)
+    {
+        if (_editor == null) return;
+        await _editor.SetValue(value ?? string.Empty);
+    }
+}

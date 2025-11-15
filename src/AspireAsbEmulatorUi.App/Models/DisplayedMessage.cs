@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace AspireAsbEmulatorUi.App.Models;
 
 public class DisplayedMessage

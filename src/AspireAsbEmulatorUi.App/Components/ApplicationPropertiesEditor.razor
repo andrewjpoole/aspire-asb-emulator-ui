@@ -1,0 +1,76 @@
+@using AspireAsbEmulatorUi.App.Models
+
+<div>
+    <div class="font-semibold mb-2">@Title</div>
+    <div class="space-y-2">
+        @foreach (var kv in Properties.Select((v, i) => (v, i)))
+        {
+            <div class="flex gap-2">
+                <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" 
+                       @bind="Properties[kv.i].Key" 
+                       placeholder="Property key" />
+                <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                       @bind="Properties[kv.i].Value" 
+                       placeholder="Property value" />
+                <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
+                        @onclick="() => RemoveProperty(kv.i)">Remove</button>
+            </div>
+        }
+
+        <div class="flex gap-2">
+            <input placeholder="key" 
+                   class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" 
+                   @bind="_newKey" 
+                   @onkeydown="OnKeyDown" />
+            <input placeholder="value" 
+                   class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                   @bind="_newValue" 
+                   @onkeydown="OnKeyDown" />
+            <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600" 
+                    @onclick="AddProperty">Add</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Application Properties";
+    [Parameter] public List<PropertyItem> Properties { get; set; } = new();
+    [Parameter] public EventCallback OnPropertiesChanged { get; set; }
+
+    private string _newKey = string.Empty;
+    private string _newValue = string.Empty;
+
+    public class PropertyItem 
+    { 
+        public string Key { get; set; } = string.Empty; 
+        public string Value { get; set; } = string.Empty; 
+    }
+
+    private async Task AddProperty()
+    {
+        if (string.IsNullOrWhiteSpace(_newKey)) return;
+        
+        Properties.Add(new PropertyItem { Key = _newKey, Value = _newValue });
+        _newKey = string.Empty;
+        _newValue = string.Empty;
+        
+        await OnPropertiesChanged.InvokeAsync();
+    }
+
+    private async Task RemoveProperty(int idx)
+    {
+        if (idx >= 0 && idx < Properties.Count)
+        {
+            Properties.RemoveAt(idx);
+            await OnPropertiesChanged.InvokeAsync();
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await AddProperty();
+        }
+    }
+}

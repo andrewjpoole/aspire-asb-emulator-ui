@@ -1,15 +1,22 @@
-﻿@page "/"
+@page "/"
 @rendermode InteractiveServer
 @using System.Threading
 @inject AspireAsbEmulatorUi.App.Services.AsbEmulatorSqlEntityRepository Repo
 @inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject NavigationManager Navigation
 
 <PageTitle>Home</PageTitle>
 
 <main class="max-w-screen-2xl mx-auto p-6">
     <div class="flex items-center justify-between mb-4">
         <h1 class="text-2xl font-semibold">ASB Emulator Explorer</h1>
+        <button class="px-3 py-2 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center gap-2" @onclick="NavigateToSettings" title="Settings">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+            </svg>
+            <span class="text-sm">Settings</span>
+        </button>
     </div>
 
     <div class="flex items-center gap-3 mb-4">
@@ -66,7 +73,6 @@
                                 <div class="flex items-center justify-between">
                                     <div>
                                         <div class="font-semibold">@e.DisplayName</div>
-                                        <div class="text-sm text-slate-400">Id: @e.Id</div>
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <div class="text-sm px-2 py-0.5 rounded bg-slate-700" title="ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">Active: @e.ActiveMessageCount</div>
@@ -106,7 +112,6 @@
                                     <div class="flex items-center justify-between">
                                         <div>
                                             <div class="font-semibold">@e.DisplayName</div>
-                                            <div class="text-sm text-slate-400">Id: @e.Id</div>
                                         </div>
                                         <div class="flex items-center gap-2">
                                             <div class="text-sm px-2 py-0.5 rounded bg-slate-700">Active: @e.ActiveMessageCount</div>
@@ -158,19 +163,15 @@
     private string _selectedEntity = string.Empty;
     private string _selectedDisplayName = string.Empty;
     private bool _isDlqSelected = false;
-    private List<string>? _messages;
 
     private string _sendBody = string.Empty;
     private string _sendResult = string.Empty;
 
     private string _filter = string.Empty;
-    private string _peekOrReceive = "peek";
-    private int _maxMessages = 20;
 
     private string _activeTab = "viewer";
 
     private bool _autoRefreshEnabled = false;
-    private CancellationTokenSource? _autoRefreshCts;
     private DateTime? _lastRefreshed;
 
     private System.Threading.Timer? _autoRefreshTimer;
@@ -218,8 +219,12 @@
         _selectedEntity = e.Name;
         _selectedDisplayName = e.DisplayName;
         _isDlqSelected = false;
-        _messages = null;
         _sendResult = string.Empty;
+    }
+
+    private void NavigateToSettings()
+    {
+        Navigation.NavigateTo("/settings");
     }
 
     private void OnTargetChanged(ChangeEventArgs e)
@@ -235,7 +240,6 @@
         _selectedEntity = val;
         _selectedDisplayName = _entities.FirstOrDefault(x => x.Name == val)?.DisplayName ?? val;
         _isDlqSelected = false;
-        _messages = null;
         _sendResult = string.Empty;
     }
 
@@ -244,7 +248,6 @@
         _selectedEntity = name;
         _selectedDisplayName = _entities.FirstOrDefault(x => x.Name == name)?.DisplayName ?? name;
         _isDlqSelected = dlq;
-        _messages = null;
         _activeTab = "viewer";
     }
 
@@ -306,10 +309,5 @@
     {
         // forward to existing handler using a synthetic ChangeEventArgs
         return OnAutoRefreshChanged(new ChangeEventArgs { Value = enable });
-    }
-
-    public void Dispose()
-    {
-        _autoRefreshCts?.Cancel();
-    }
+    }    
 }
