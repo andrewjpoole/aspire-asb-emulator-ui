@@ -1,0 +1,319 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@inject AspireAsbEmulatorUi.App.Services.SqlEntityRepository Repo
+@inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+
+<PageTitle>Home</PageTitle>
+
+<main class="max-w-screen-2xl mx-auto p-6">
+    <div class="flex items-center justify-between mb-4">
+        <h1 class="text-2xl font-semibold">ASB Emulator Explorer</h1>
+        <div>
+            <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="Refresh">Refresh Entities</button>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-3 mb-4">
+        <label class="text-sm text-slate-300">Filter</label>
+        <input @bind="_filter" placeholder="search by name or id" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-64" />
+        <button class="px-3 py-1 rounded border border-slate-700 text-slate-100 hover:bg-slate-700" @onclick="ApplyFilter">Apply</button>
+    </div>
+
+    <div class="grid grid-cols-12 gap-6">
+        <!-- Left pane -->
+        <div class="col-span-5 space-y-4">
+            <div>
+                <h3 class="text-lg font-medium mb-2">Queues</h3>
+                <div class="space-y-3 max-h-[60vh] overflow-auto pr-2">
+                    @if (_loading)
+                    {
+                        <div class="text-sm text-slate-400">Loading...</div>
+                    }
+                    else
+                    {
+                        var queues = _entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                        if (!queues.Any())
+                        {
+                            <div class="bg-slate-800 rounded p-3 text-slate-400">No queues.</div>
+                        }
+                        else
+                        {
+                            foreach (var e in queues)
+                            {
+                                var isSelected = _selectedEntity == e.Name;
+                                var cardClass = isSelected 
+                                    ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700" 
+                                    : "p-3 rounded cursor-pointer border border-slate-700 bg-slate-800 hover:bg-slate-700";
+                                
+                                <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="font-semibold">@e.DisplayName</div>
+                                            <div class="text-sm text-slate-400">Id: @e.Id</div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <div class="text-sm px-2 py-0.5 rounded bg-slate-700">Active: @e.ActiveMessageCount</div>
+                                            <div class="text-sm px-2 py-0.5 rounded bg-slate-700">DLQ: @e.DeadletterMessageCount</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 flex gap-2">
+                                        <button class="text-sm px-2 py-1 rounded border border-slate-600 hover:bg-slate-600" @onclick:stopPropagation="true" @onclick="@(() => OpenViewer(e.Name, false))">Peek</button>
+                                        <button class="text-sm px-2 py-1 rounded bg-slate-700 hover:bg-slate-600" @onclick:stopPropagation="true" @onclick="@(() => OpenViewer(e.Name, true))">DLQ</button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-medium mb-2">Topics</h3>
+                <div class="space-y-3 max-h-[60vh] overflow-auto pr-2">
+                    @if (_loading)
+                    {
+                        <div class="text-sm text-slate-400">Loading...</div>
+                    }
+                    else
+                    {
+                        var topics = _entities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                        if (!topics.Any())
+                        {
+                            <div class="bg-slate-800 rounded p-3 text-slate-400">No topics.</div>
+                        }
+                        else
+                        {
+                            foreach (var e in topics)
+                            {
+                                var isSelected = _selectedEntity == e.Name;
+                                var cardClass = isSelected 
+                                    ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700" 
+                                    : "p-3 rounded cursor-pointer border border-slate-700 bg-slate-800 hover:bg-slate-700";
+                                
+                                <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="font-semibold">@e.DisplayName</div>
+                                            <div class="text-sm text-slate-400">Id: @e.Id</div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <div class="text-sm px-2 py-0.5 rounded bg-slate-700">Active: @e.ActiveMessageCount</div>
+                                            <div class="text-sm px-2 py-0.5 rounded bg-slate-700">DLQ: @e.DeadletterMessageCount</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3 flex gap-2">
+                                        <button class="text-sm px-2 py-1 rounded border border-slate-600 hover:bg-slate-600" @onclick:stopPropagation="true" @onclick="@(() => OpenViewer(e.Name, false))">Peek</button>
+                                        <button class="text-sm px-2 py-1 rounded bg-slate-700 hover:bg-slate-600" @onclick:stopPropagation="true" @onclick="@(() => OpenViewer(e.Name, true))">DLQ</button>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Right pane -->
+        <div class="col-span-7">
+            @if (string.IsNullOrEmpty(_selectedEntity))
+            {
+                <div class="bg-slate-800 rounded p-4 text-slate-400">Select an entity on the left to view messages or send.</div>
+            }
+            else
+            {
+                <div class="bg-slate-800 rounded p-4 mb-4">
+                    <h3 class="text-lg font-medium mb-2">Viewer</h3>
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="font-semibold text-blue-400">@_selectedDisplayName</div>
+                        <div class="text-sm text-slate-400">@(_isDlqSelected ? "Deadletter" : "Main")</div>
+                    </div>
+
+                    <div class="flex items-center gap-3 mb-3">
+                        <select @bind="_peekOrReceive" class="bg-slate-800 border border-slate-700 rounded px-2 py-1">
+                            <option value="peek">Peek (non-destructive)</option>
+                            <option value="receive">Receive (destructive)</option>
+                        </select>
+                        <input type="number" min="1" max="100" @bind="_maxMessages" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" />
+                        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="LoadMessages">Load</button>
+                    </div>
+
+                    <div class="space-y-3">
+                        @if (_messages is null)
+                        {
+                            <div class="text-slate-400">Messages not loaded.</div>
+                        }
+                        else if (!_messages.Any())
+                        {
+                            <div class="text-slate-400">No messages.</div>
+                        }
+                        else
+                        {
+                            foreach (var m in _messages)
+                            {
+                                <div class="bg-slate-700 p-3 rounded">
+                                    <pre class="whitespace-pre-wrap text-sm">@m</pre>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+
+                <div class="bg-slate-800 rounded p-4">
+                    <h3 class="text-lg font-medium mb-2">Send Message</h3>
+                    <label class="text-sm text-slate-400 block mb-1">Target</label>
+                    <select @onchange="OnTargetChanged" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1 mb-3 text-slate-300">
+                        <option value="">-- select --</option>
+                        @foreach (var e in _entities.Where(EvaluateFilter))
+                        {
+                            <option value="@e.Name" selected="@(e.Name == _selectedEntity)">@e.DisplayName</option>
+                        }
+                    </select>
+                    <input readonly value="@_selectedDisplayName" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1 mb-3 text-slate-300" />
+
+                    <label class="text-sm text-slate-400 block mb-1">Body (text)</label>
+                    <textarea rows="6" @bind="_sendBody" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-100"></textarea>
+
+                    <div class="mt-3">
+                        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="SendMessage">Send</button>
+                        @if (!string.IsNullOrEmpty(_sendResult))
+                        {
+                            <div class="text-sm text-slate-400 mt-2">@_sendResult</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</main>
+
+@code{
+    private bool _loading = false;
+    private List<Models.ServiceBusEntityInfo> _entities = new();
+
+    private string _selectedEntity = string.Empty;
+    private string _selectedDisplayName = string.Empty;
+    private bool _isDlqSelected = false;
+    private List<string>? _messages;
+
+    private string _sendBody = string.Empty;
+    private string _sendResult = string.Empty;
+
+    private string _filter = string.Empty;
+    private string _peekOrReceive = "peek";
+    private int _maxMessages = 20;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        _loading = true;
+        try
+        {
+            _entities = await Repo.GetEntitiesAsync();
+        }
+        catch (Exception ex)
+        {
+            _entities = new List<Models.ServiceBusEntityInfo>();
+            _sendResult = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        StateHasChanged();
+    }
+
+    private bool EvaluateFilter(Models.ServiceBusEntityInfo e)
+    {
+        if (string.IsNullOrWhiteSpace(_filter)) return true;
+        if (e.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)) return true;
+        if (e.DisplayName.Contains(_filter, StringComparison.OrdinalIgnoreCase)) return true;
+        if (long.TryParse(_filter, out var id) && e.Id == id) return true;
+        return false;
+    }
+
+    private void SelectEntity(Models.ServiceBusEntityInfo e)
+    {
+        _selectedEntity = e.Name;
+        _selectedDisplayName = e.DisplayName;
+        _isDlqSelected = false;
+        _messages = null;
+        _sendResult = string.Empty;
+    }
+
+    private void OnTargetChanged(ChangeEventArgs e)
+    {
+        var val = e?.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(val))
+        {
+            _selectedEntity = string.Empty;
+            _selectedDisplayName = string.Empty;
+            return;
+        }
+
+        _selectedEntity = val;
+        _selectedDisplayName = _entities.FirstOrDefault(x => x.Name == val)?.DisplayName ?? val;
+        _isDlqSelected = false;
+        _messages = null;
+        _sendResult = string.Empty;
+    }
+
+    private void OpenViewer(string name, bool dlq)
+    {
+        _selectedEntity = name;
+        _selectedDisplayName = _entities.FirstOrDefault(x => x.Name == name)?.DisplayName ?? name;
+        _isDlqSelected = dlq;
+        _messages = null;
+    }
+
+    private async Task LoadMessages()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedEntity)) return;
+        _messages = new List<string>();
+        try
+        {
+            var target = _selectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
+            if (_peekOrReceive == "peek")
+            {
+                var msgs = await Bus.PeekMessagesAsync(target, _maxMessages);
+                _messages.AddRange(msgs);
+            }
+            else
+            {
+                var msgs = await Bus.ReceiveMessagesAsync(target, _maxMessages);
+                _messages.AddRange(msgs);
+            }
+        }
+        catch (Exception ex)
+        {
+            _messages.Add($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedEntity))
+        {
+            _sendResult = "Select a target entity first.";
+            return;
+        }
+
+        try
+        {
+            await Bus.SendMessageAsync(_selectedEntity, _sendBody);
+            _sendResult = $"Sent at {DateTime.Now:HH:mm:ss}";
+        }
+        catch (Exception ex)
+        {
+            _sendResult = $"Error: {ex.Message}";
+        }
+    }
+}

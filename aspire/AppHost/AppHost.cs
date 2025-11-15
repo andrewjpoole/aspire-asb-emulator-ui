@@ -1,0 +1,65 @@
+using Aspire.Hosting.Azure;
+using Microsoft.Extensions.Logging;
+using Projects;
+
+var builder = DistributedApplication.CreateBuilder(args);
+
+// Add Azure Service Bus and configure it to run with the emulator
+var serviceBus = builder
+    .AddAzureServiceBus("myservicebus")
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
+
+serviceBus.AddServiceBusQueue("myqueue");
+
+var apiService = builder.AddProject<AspireAsbEmulatorUi_App>("asb-ui")
+    .WithReference(serviceBus)
+    .WaitFor(serviceBus)
+    .ExcludeFromManifest()
+    .WithEnvironment(async (context) =>
+    {
+        // No runtime environment configuration when publishing the app.
+        if (context.ExecutionContext.IsPublishMode)
+            return;
+
+        // Find the ASB emulator resource
+        var serviceBusResource = builder.Resources.OfType<AzureServiceBusResource>().SingleOrDefault()
+            ?? throw new Exception("Unable to find resource of type AzureServiceBusResource");
+
+        // Expose the resource name, this is used to build a connection string in the app.
+        context.EnvironmentVariables["asb-resource-name"] = serviceBusResource.Name;
+
+        // Find the SQL container that backs the emulator and expose its port
+        var sqlAsbContainerResource = builder.Resources.SingleOrDefault(r => r.Name == $"{serviceBusResource.Name}-mssql")
+            ?? throw new Exception($"Unable to find ASB emulator resource with name {serviceBusResource.Name}-mssql");
+
+        if (!sqlAsbContainerResource.TryGetUrls(out var urls) || urls == null || !urls.Any())
+            throw new Exception("Unable to get any SQL endpoint URLs from ASB emulator resource.");
+
+        var firstUrl = urls.First();
+        var sqlPort = firstUrl.Endpoint?.Port
+            ?? throw new Exception("Unable to get SQL endpoint port from ASB emulator resource.");
+
+        // Expose the port that the ASB emulator's MS SQK backend is running on, which changes everytime Aspire is run, this is used to build a connection string in the app.
+        context.EnvironmentVariables["asb-sql-port"] = sqlPort;
+
+        // Process container environment variables to extract the SQL password parameter (if present)
+        await sqlAsbContainerResource.ProcessEnvironmentVariableValuesAsync(
+            context.ExecutionContext,
+            async (key, unprocessedValue, processedValue, exception) =>
+            {
+                if (key != "MSSQL_SA_PASSWORD")
+                    return;
+
+                if(string.IsNullOrEmpty(processedValue))
+                {
+                    context.Logger.LogError("MSSQL_SA_PASSWORD environment variable returned null or empty value when resolving ASB emulator SQL password.");
+                    return;
+                }
+
+                context.EnvironmentVariables["asb-sql-password"] = processedValue;
+            },
+            context.Logger,
+            CancellationToken.None);
+    });
+
+builder.Build().Run();
