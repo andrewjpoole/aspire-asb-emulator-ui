@@ -1,7 +1,3 @@
-using Aspire.Hosting.Azure;
-using Aspire.Hosting;
-using Microsoft.Extensions.Logging;
-using Projects;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -30,31 +26,26 @@ topic.AddServiceBusSubscription("sub1")
          subscription.ForwardTo = "topic-sub1-fwd";
      });
 
-// Add ASB Emulator UI using the extension method
-//var apiService = builder.AddAsbEmulatorUi("asb-ui", serviceBus, options =>
-//{
-//    options.ConfigureSettings = settings =>
-//    {
-//        // Add some example canned messages
-//        settings.CannedMessages["queue-one"] = new Dictionary<string, CannedMessage>
-//        {
-//            ["test-order"] = new CannedMessage
-//            {
-//                ContentType = "application/json",
-//                Body = """{ "orderId": "~newGuid~", "timestamp": "~now~", "amount": 99.99 }""",
-//                ApplicationProperties = new Dictionary<string, object>
-//                {
-//                    ["MessageType"] = "MT_EVENT",
-//                    ["EventType"] = "OrderCreated"
-//                }
-//            }
-//        };
+const bool testUsingContainerAndExtension = false;
 
-//        settings.CommonApplicationProperties.Add(new KeyValuePair<string, string>("Source", "Integration-Test"));
-//    };
-//})
-//.WithIntegrationTestApi(enabled: true);  // Enable integration test API
+if (testUsingContainerAndExtension)
+{
+    builder.AddAsbEmulatorUi("asb-ui", serviceBus);
+}
+else 
+{
+    // Add the project resource
+    var asbEmulatorUiResourceBuilder = builder.AddProject<Projects.AspireAsbEmulatorUi_App>("asb-ui")
+        .WithReference(serviceBus)
+        .WaitFor(serviceBus)
+        .ExcludeFromManifest()
+        .WithEnvironment(async (context) =>
+        {
+            // Can't use builder extension pattern as this will be a local ProjectResource rather than a AsbEmulatorUiResource.
+            await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
+        }); 
+}
 
-builder.AddAsbEmulatorUi("asb-ui", serviceBus);
+
 
 builder.Build().Run();

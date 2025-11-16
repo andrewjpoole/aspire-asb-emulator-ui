@@ -11,11 +11,7 @@ namespace AspireAsbEmulatorUi.App.Api;
 public static class IntegrationTestApi
 {
     public static void MapIntegrationTestEndpoints(this WebApplication app)
-    {
-        var enableApi = app.Configuration.GetValue<bool>("AsbEmulatorUi__EnableIntegrationTestApi");
-        if (!enableApi)
-            return;
-
+    {       
         var api = app.MapGroup("/api");
 
         // Send a canned message
