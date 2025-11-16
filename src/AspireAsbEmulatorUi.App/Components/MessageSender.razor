@@ -157,40 +157,20 @@
         var settings = SettingsService.GetSettings();
         var allScenarios = new Dictionary<string, string>(); // scenarioName -> entityKey
         
-        // First, check for wildcard entities ("all", "any", "*")
-        var wildcardEntities = settings.CannedMessages.Keys
-            .Where(k => k.Equals("all", StringComparison.OrdinalIgnoreCase) ||
-                       k.Equals("any", StringComparison.OrdinalIgnoreCase) ||
-                       k == "*")
-            .ToList();
-        
-        foreach (var wildcardKey in wildcardEntities)
-        {
-            if (settings.CannedMessages.TryGetValue(wildcardKey, out var wildcardScenarios))
-            {
-                foreach (var scenario in wildcardScenarios.Keys)
-                {
-                    // Add with wildcard prefix to distinguish from entity-specific scenarios
-                    var displayName = $"{scenario} (wildcard)";
-                    allScenarios[displayName] = wildcardKey;
-                }
-            }
-        }
-        
-        // Try exact match for entity-specific scenarios
-        if (settings.CannedMessages.TryGetValue(SelectedEntity, out var scenarios))
+        // Try exact match first (highest priority)
+        if (settings.CannedMessages.TryGetValue(SelectedEntity, out var exactScenarios))
         {
             _matchedEntityKey = SelectedEntity;
-            foreach (var scenario in scenarios.Keys)
+            foreach (var scenario in exactScenarios.Keys)
             {
                 allScenarios[scenario] = SelectedEntity;
             }
         }
         else
         {
-            // Try case-insensitive match
+            // Try case-insensitive exact match
             var matchingKey = settings.CannedMessages.Keys
-                .FirstOrDefault(k => string.Equals(k, SelectedEntity, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(k => !k.Contains("*") && string.Equals(k, SelectedEntity, StringComparison.OrdinalIgnoreCase));
             
             if (matchingKey != null && settings.CannedMessages.TryGetValue(matchingKey, out var scenariosInsensitive))
             {
@@ -202,14 +182,67 @@
             }
         }
         
-        // Populate the canned messages list (sorted, with entity-specific first, then wildcards)
+        // Now check for wildcard pattern matches
+        var wildcardKeys = settings.CannedMessages.Keys
+            .Where(k => k.Contains("*"))
+            .ToList();
+        
+        foreach (var wildcardKey in wildcardKeys)
+        {
+            if (IsWildcardMatch(wildcardKey, SelectedEntity))
+            {
+                if (settings.CannedMessages.TryGetValue(wildcardKey, out var wildcardScenarios))
+                {
+                    foreach (var scenario in wildcardScenarios.Keys)
+                    {
+                        // Add with pattern prefix to distinguish from entity-specific scenarios
+                        var displayName = $"{scenario} ({wildcardKey})";
+                        allScenarios[displayName] = wildcardKey;
+                    }
+                }
+            }
+        }
+        
+        // Populate the canned messages list (sorted, with exact matches first, then wildcard patterns)
         _cannedMessages = allScenarios.Keys
-            .OrderBy(k => k.Contains("(wildcard)"))
+            .OrderBy(k => k.Contains("("))  // Exact matches without parentheses come first
             .ThenBy(k => k)
             .ToList();
         
         // Store the mapping for later retrieval
         _scenarioToEntityMap = allScenarios;
+    }
+
+    private bool IsWildcardMatch(string pattern, string value)
+    {
+        if (pattern == "*")
+            return true;
+        
+        if (!pattern.Contains("*"))
+            return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
+        
+        // Handle wildcard patterns
+        if (pattern.StartsWith("*") && pattern.EndsWith("*"))
+        {
+            // *blah* - contains
+            var searchText = pattern.Trim('*');
+            return value.Contains(searchText, StringComparison.OrdinalIgnoreCase);
+        }
+        else if (pattern.StartsWith("*"))
+        {
+            // *blah - ends with
+            var suffix = pattern.TrimStart('*');
+            return value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
+        }
+        else if (pattern.EndsWith("*"))
+        {
+            // blah* - starts with
+            var prefix = pattern.TrimEnd('*');
+            return value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+        
+        // Pattern contains * in the middle - not supported, treat as literal
+        return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task LoadCannedMessage()
@@ -226,8 +259,16 @@
             if (_scenarioToEntityMap.TryGetValue(_selectedCannedMessage, out var mappedEntityKey))
             {
                 entityKey = mappedEntityKey;
-                // Remove the " (wildcard)" suffix if present
-                actualScenarioName = _selectedCannedMessage.Replace(" (wildcard)", "");
+                // Remove the pattern suffix if present (e.g., " (blah*)" or " (*)")
+                var lastOpenParen = _selectedCannedMessage.LastIndexOf(" (");
+                if (lastOpenParen > 0 && _selectedCannedMessage.EndsWith(")"))
+                {
+                    actualScenarioName = _selectedCannedMessage.Substring(0, lastOpenParen);
+                }
+                else
+                {
+                    actualScenarioName = _selectedCannedMessage;
+                }
             }
             else
             {

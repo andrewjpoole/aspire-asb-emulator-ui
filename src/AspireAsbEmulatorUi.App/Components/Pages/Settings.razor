@@ -38,6 +38,7 @@
         <!-- Content Types Card -->
         <div class="bg-slate-800 rounded p-6">
             <h2 class="text-xl font-semibold mb-4">Content Types</h2>
+            <p class="text-sm text-slate-400 mb-3">Define which content types should be available in the dropdown when sending messages and which one should be the default.</p>
             <div class="space-y-2">
                 @foreach (var ct in _settings.ContentTypes.Select((v, i) => (v, i)))
                 {
@@ -88,10 +89,12 @@
 
         <!-- Canned Messages Card -->
         <div class="bg-slate-800 rounded p-6">
-            <h2 class="text-xl font-semibold mb-4">Canned Messages</h2>
-            <div class="mb-4 p-3 rounded bg-blue-900 text-blue-100 text-sm">
-                <strong>Tip:</strong> Use entity names like "all", "any", or "*" to create canned messages that appear for any entity in the Message Sender.
-            </div>
+            <h2 class="text-xl font-semibold mb-4">Canned Messages</h2>            
+            <p class="text-sm text-slate-400 mb-3">
+                Define CannedMessages to send, organised by Scenario, for one or more Entities (hint: use * wildcard to match multiple or all Entities).
+                <br/>
+                These will be available in a dropdown when sending messages for matching Entities.
+            </p>
             <div class="space-y-4">
                 @foreach (var entity in _settings.CannedMessages)
                 {
@@ -111,11 +114,7 @@
                             else
                             {
                                 <div class="flex items-center gap-2">
-                                    <h4 class="font-semibold">Entity: @entity.Key</h4>
-                                    @if (IsWildcardEntity(entity.Key))
-                                    {
-                                        <span class="px-2 py-0.5 rounded bg-purple-600 text-purple-100 text-xs">Wildcard - shows for all entities</span>
-                                    }
+                                    <h4 class="font-semibold">Entity: @entity.Key</h4>                                   
                                 </div>
                                 <div class="flex gap-2">
                                     <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="() => StartEditingEntityName(entity.Key)">Rename</button>
@@ -130,7 +129,10 @@
                             <div class="bg-slate-800 rounded p-3 mb-2">
                                 <div class="flex items-center justify-between mb-2">
                                     <span class="font-medium">Scenario: @scenario.Key</span>
-                                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700 text-sm" @onclick="() => RemoveScenario(entity.Key, scenario.Key)">Remove</button>
+                                    <div class="flex gap-2">
+                                        <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700 text-sm" @onclick="() => DuplicateScenario(entity.Key, scenario.Key)">Duplicate</button>
+                                        <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700 text-sm" @onclick="() => RemoveScenario(entity.Key, scenario.Key)">Remove</button>
+                                    </div>
                                 </div>
                                 <button class="text-sm px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => ToggleScenarioDetails(entity.Key, scenario.Key)">
                                     @(_expandedScenarios.Contains(scenarioKey) ? "Hide Details" : "Show Details")
@@ -203,7 +205,7 @@
                 }
                 
                 <div class="flex gap-2">
-                    <input placeholder="Enter an ASB Entity name to add some canned messages for..." class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newEntityName" />
+                    <input placeholder="Enter an ASB Entity name, use * wildcard to match multiple..." class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newEntityName" />
                     <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddEntity">Add Entity</button>
                 </div>
             </div>
@@ -223,6 +225,37 @@
         </div>
     </div>
 </main>
+
+@if (_showDuplicateDialog)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
+            <h3 class="text-lg font-semibold mb-4">Duplicate Scenario</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Original: @_duplicateSourceScenario</label>
+                </div>
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">New Scenario Name</label>
+                    <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                           @bind="_duplicateNewName" 
+                           placeholder="Enter new scenario name"
+                           @onkeydown="HandleDuplicateKeyDown" />
+                </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ConfirmDuplicate">Duplicate</button>
+                <button class="px-4 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="CancelDuplicate">Cancel</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_duplicateError))
+            {
+                <div class="mt-3 p-2 rounded bg-red-900 text-red-100 text-sm">
+                    @_duplicateError
+                </div>
+            }
+        </div>
+    </div>
+}
 
 @code {
     private Models.Settings _settings = new();
@@ -244,10 +277,112 @@
     // Monaco editor instances for each scenario
     private Dictionary<string, StandaloneCodeEditor> _bodyEditors = new();
     
+    // Entity name editing fields
+    private string? _editingEntityName = null;
+    private string _newEntityNameValue = string.Empty;
+
+    // Duplicate scenario dialog fields
+    private bool _showDuplicateDialog = false;
+    private string _duplicateEntityName = string.Empty;
+    private string _duplicateSourceScenario = string.Empty;
+    private string _duplicateNewName = string.Empty;
+    private string _duplicateError = string.Empty;
+
     protected override void OnInitialized()
     {
         _settings = SettingsService.GetSettings();
         InitializePropertyLists();
+    }
+
+    // Start editing an entity name
+    private void StartEditingEntityName(string entityName)
+    {
+        _editingEntityName = entityName;
+        _newEntityNameValue = entityName;
+        StateHasChanged();
+    }
+
+    // Cancel editing entity name
+    private void CancelEntityNameEdit()
+    {
+        _editingEntityName = null;
+        _newEntityNameValue = string.Empty;
+        StateHasChanged();
+    }
+
+    // Save the edited entity name
+    private void SaveEntityNameEdit(string oldEntityName)
+    {
+        if (string.IsNullOrWhiteSpace(_newEntityNameValue))
+        {
+            _message = "Entity name cannot be empty";
+            _editingEntityName = null;
+            StateHasChanged();
+            return;
+        }
+
+        if (_newEntityNameValue == oldEntityName)
+        {
+            CancelEntityNameEdit();
+            return;
+        }
+
+        if (_settings.CannedMessages.ContainsKey(_newEntityNameValue))
+        {
+            _message = $"Entity '{_newEntityNameValue}' already exists";
+            StateHasChanged();
+            return;
+        }
+
+        if (_settings.CannedMessages.TryGetValue(oldEntityName, out var scenarios))
+        {
+            _settings.CannedMessages.Remove(oldEntityName);
+            _settings.CannedMessages[_newEntityNameValue] = scenarios;
+            
+            if (_newScenarioNames.ContainsKey(oldEntityName))
+            {
+                var value = _newScenarioNames[oldEntityName];
+                _newScenarioNames.Remove(oldEntityName);
+                _newScenarioNames[_newEntityNameValue] = value;
+            }
+            
+            var keysToRename = _appPropsLists.Keys.Where(k => k.StartsWith($"{oldEntityName}:")).ToList();
+            foreach (var oldKey in keysToRename)
+            {
+                var scenarioName = oldKey.Substring(oldEntityName.Length + 1);
+                var newKey = $"{_newEntityNameValue}:{scenarioName}";
+                
+                if (_appPropsLists.ContainsKey(oldKey))
+                {
+                    _appPropsLists[newKey] = _appPropsLists[oldKey];
+                    _appPropsLists.Remove(oldKey);
+                }
+                
+                if (_brokerPropsLists.ContainsKey(oldKey))
+                {
+                    _brokerPropsLists[newKey] = _brokerPropsLists[oldKey];
+                    _brokerPropsLists.Remove(oldKey);
+                }
+                
+                if (_bodyEditors.ContainsKey(oldKey))
+                {
+                    _bodyEditors[newKey] = _bodyEditors[oldKey];
+                    _bodyEditors.Remove(oldKey);
+                }
+                
+                if (_expandedScenarios.Contains(oldKey))
+                {
+                    _expandedScenarios.Remove(oldKey);
+                    _expandedScenarios.Add(newKey);
+                }
+            }
+            
+            _message = $"Renamed entity from '{oldEntityName}' to '{_newEntityNameValue}'";
+        }
+        
+        _editingEntityName = null;
+        _newEntityNameValue = string.Empty;
+        StateHasChanged();
     }
 
     private void InitializePropertyLists()
@@ -680,6 +815,114 @@
         }
     }
 
+    // Duplicate a scenario
+    private void DuplicateScenario(string entityName, string scenarioName)
+    {
+        _duplicateEntityName = entityName;
+        _duplicateSourceScenario = scenarioName;
+        _duplicateNewName = $"{scenarioName} - Copy";
+        _duplicateError = string.Empty;
+        _showDuplicateDialog = true;
+        StateHasChanged();
+    }
+    
+    private void CancelDuplicate()
+    {
+        _showDuplicateDialog = false;
+        _duplicateEntityName = string.Empty;
+        _duplicateSourceScenario = string.Empty;
+        _duplicateNewName = string.Empty;
+        _duplicateError = string.Empty;
+        StateHasChanged();
+    }
+    
+    private async Task HandleDuplicateKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await ConfirmDuplicate();
+        }
+        else if (e.Key == "Escape")
+        {
+            CancelDuplicate();
+        }
+    }
+    
+    private async Task ConfirmDuplicate()
+    {
+        _duplicateError = string.Empty;
+        
+        if (string.IsNullOrWhiteSpace(_duplicateNewName))
+        {
+            _duplicateError = "Scenario name cannot be empty";
+            StateHasChanged();
+            return;
+        }
+        
+        if (!_settings.CannedMessages.TryGetValue(_duplicateEntityName, out var scenarios))
+        {
+            _duplicateError = "Entity not found";
+            StateHasChanged();
+            return;
+        }
+        
+        if (scenarios.ContainsKey(_duplicateNewName))
+        {
+            _duplicateError = $"Scenario '{_duplicateNewName}' already exists";
+            StateHasChanged();
+            return;
+        }
+        
+        if (!scenarios.TryGetValue(_duplicateSourceScenario, out var sourceMessage) || sourceMessage == null)
+        {
+            _duplicateError = "Source scenario not found";
+            StateHasChanged();
+            return;
+        }
+        
+        // Create a deep copy of the source message
+        var duplicatedMessage = new CannedMessage
+        {
+            ContentType = sourceMessage.ContentType,
+            Body = sourceMessage.Body,
+            ApplicationProperties = sourceMessage.ApplicationProperties?
+                .ToDictionary(kv => kv.Key, kv => kv.Value),
+            BrokerProperties = sourceMessage.BrokerProperties?
+                .ToDictionary(kv => kv.Key, kv => kv.Value)
+        };
+        
+        // Add the duplicated message
+        scenarios[_duplicateNewName] = duplicatedMessage;
+        
+        // Initialize property lists for the new scenario
+        var newKey = $"{_duplicateEntityName}:{_duplicateNewName}";
+        _appPropsLists[newKey] = (duplicatedMessage.ApplicationProperties ?? new Dictionary<string, object>())
+            .Select(kv => new ApplicationPropertiesEditor.PropertyItem 
+            { 
+                Key = kv.Key, 
+                Value = kv.Value?.ToString() ?? string.Empty 
+            })
+            .ToList();
+        
+        _brokerPropsLists[newKey] = (duplicatedMessage.BrokerProperties ?? new Dictionary<string, object>())
+            .Select(kv => new BrokerPropertiesEditor.PropertyItem 
+            { 
+                Key = kv.Key, 
+                Value = kv.Value?.ToString() ?? string.Empty 
+            })
+            .ToList();
+        
+        _message = $"Duplicated '{_duplicateSourceScenario}' to '{_duplicateNewName}'";
+        
+        // Close dialog
+        CancelDuplicate();
+        
+        // Expand the new scenario
+        _expandedScenarios.Add(newKey);
+        
+        StateHasChanged();
+    }
+
     // Helper for mapping content types to Monaco languages
     private string GetMonacoLanguage(string contentType)
     {
@@ -690,108 +933,5 @@
             "text/plain" => "plaintext",
             _ => "plaintext",
         };
-    }
-
-    // Entity name editing fields
-    private string? _editingEntityName = null;
-    private string _newEntityNameValue = string.Empty;
-
-    // Check if entity name is a wildcard
-    private bool IsWildcardEntity(string entityName)
-    {
-        return entityName.Equals("all", StringComparison.OrdinalIgnoreCase) ||
-               entityName.Equals("any", StringComparison.OrdinalIgnoreCase) ||
-               entityName == "*";
-    }
-
-    // Start editing an entity name
-    private void StartEditingEntityName(string entityName)
-    {
-        _editingEntityName = entityName;
-        _newEntityNameValue = entityName;
-        StateHasChanged();
-    }
-
-    // Cancel editing entity name
-    private void CancelEntityNameEdit()
-    {
-        _editingEntityName = null;
-        _newEntityNameValue = string.Empty;
-        StateHasChanged();
-    }
-
-    // Save the edited entity name
-    private void SaveEntityNameEdit(string oldEntityName)
-    {
-        if (string.IsNullOrWhiteSpace(_newEntityNameValue))
-        {
-            _message = "Entity name cannot be empty";
-            _editingEntityName = null;
-            StateHasChanged();
-            return;
-        }
-
-        if (_newEntityNameValue == oldEntityName)
-        {
-            CancelEntityNameEdit();
-            return;
-        }
-
-        if (_settings.CannedMessages.ContainsKey(_newEntityNameValue))
-        {
-            _message = $"Entity '{_newEntityNameValue}' already exists";
-            StateHasChanged();
-            return;
-        }
-
-        if (_settings.CannedMessages.TryGetValue(oldEntityName, out var scenarios))
-        {
-            _settings.CannedMessages.Remove(oldEntityName);
-            _settings.CannedMessages[_newEntityNameValue] = scenarios;
-            
-            if (_newScenarioNames.ContainsKey(oldEntityName))
-            {
-                var value = _newScenarioNames[oldEntityName];
-                _newScenarioNames.Remove(oldEntityName);
-                _newScenarioNames[_newEntityNameValue] = value;
-            }
-            
-            var keysToRename = _appPropsLists.Keys.Where(k => k.StartsWith($"{oldEntityName}:")).ToList();
-            foreach (var oldKey in keysToRename)
-            {
-                var scenarioName = oldKey.Substring(oldEntityName.Length + 1);
-                var newKey = $"{_newEntityNameValue}:{scenarioName}";
-                
-                if (_appPropsLists.ContainsKey(oldKey))
-                {
-                    _appPropsLists[newKey] = _appPropsLists[oldKey];
-                    _appPropsLists.Remove(oldKey);
-                }
-                
-                if (_brokerPropsLists.ContainsKey(oldKey))
-                {
-                    _brokerPropsLists[newKey] = _brokerPropsLists[oldKey];
-                    _brokerPropsLists.Remove(oldKey);
-                }
-                
-                if (_bodyEditors.ContainsKey(oldKey))
-                {
-                    _bodyEditors[newKey] = _bodyEditors[oldKey];
-                    _bodyEditors.Remove(oldKey);
-                }
-                
-                if (_expandedScenarios.Contains(oldKey))
-                {
-                    _expandedScenarios.Remove(oldKey);
-                    _expandedScenarios.Add(newKey);
-                }
-            }
-            
-            _message = $"Renamed entity from '{oldEntityName}' to '{_newEntityNameValue}'";
-        }
-        
-        _editingEntityName = null;
-        _newEntityNameValue = string.Empty;
-        StateHasChanged();
     }
 }
