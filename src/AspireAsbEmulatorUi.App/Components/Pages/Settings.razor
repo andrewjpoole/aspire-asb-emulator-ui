@@ -5,8 +5,11 @@
 @using System.Text.Json
 @using BlazorMonaco
 @using BlazorMonaco.Editor
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
 @inject SettingsService SettingsService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Settings</PageTitle>
 
@@ -16,9 +19,12 @@
             <h1 class="text-2xl font-semibold">ASB Emulator Explorer Settings</h1>
         </div>
         <div class="flex items-center gap-3">
-            <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ExportSettings">Export JSON</button>
-            <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="SaveSettings">Save Settings</button>
-            <button class="px-3 py-2 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center gap-2" @onclick="GoBack">
+            <button class="px-3 py-2 rounded flex items-center @(_isDirty ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-slate-600 text-slate-400 cursor-not-allowed")" 
+                    @onclick="SaveSettings" 
+                    disabled="@(!_isDirty)">
+                <span class="text-sm">Save Settings@(_isDirty ? " *" : "")</span>
+            </button>
+            <button class="px-3 py-2 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center gap-2" @onclick="HandleGoBack">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="white">
                     <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
                 </svg>
@@ -26,6 +32,11 @@
             </button>
         </div>
     </div>
+    
+    <InputFile @ref="_fileInputComponent" 
+               OnChange="HandleFileSelected" 
+               accept=".json,application/json" 
+               style="display: none;" />
 
     @if (!string.IsNullOrEmpty(_message))
     {
@@ -43,7 +54,7 @@
                 @foreach (var ct in _settings.ContentTypes.Select((v, i) => (v, i)))
                 {
                     <div class="flex gap-2 items-center">
-                        <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_settings.ContentTypes[ct.i]" />
+                        <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_settings.ContentTypes[ct.i]" @bind:after="MarkDirty" />
                         <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveContentType(ct.i)">Remove</button>
                     </div>
                 }
@@ -55,7 +66,7 @@
 
             <div class="mt-4">
                 <label class="text-sm text-slate-400 block mb-2">Default Content Type</label>
-                <select @bind="_settings.DefaultContentType" class="bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded w-full">
+                <select @bind="_settings.DefaultContentType" @bind:after="MarkDirty" class="bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded w-full">
                     @foreach (var ct in _settings.ContentTypes)
                     {
                         <option value="@ct">@ct</option>
@@ -145,17 +156,20 @@
                                         <div class="mt-3 space-y-4">
                                             <div>
                                                 <label class="text-xs text-slate-400 block mb-1">Content Type</label>
-                                                <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" @bind="scenario.Value.ContentType" @bind:after="() => OnContentTypeChanged(scenarioKey)" />
+                                                <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" @bind="scenario.Value.ContentType" @bind:after="MarkDirty" />
                                             </div>
                                             <div>
                                                 <label class="text-xs text-slate-400 block mb-1">Body</label>
-                                                <div class="border border-slate-700 rounded overflow-hidden" style="height: 200px; width: 100%;">
-                                                    <StandaloneCodeEditor 
-                                                        @ref="_bodyEditors[scenarioKey]" 
-                                                        Id="@($"body-editor-{scenarioKey}")"
-                                                        CssClass="h-full w-full"
-                                                        ConstructionOptions="@((editor) => GetEditorConstructionOptions(editor, scenarioKey))"
-                                                        OnDidInit="@(() => OnEditorInit(scenarioKey))" />
+                                                <div class="relative">
+                                                    <textarea class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm font-mono" 
+                                                              rows="8" 
+                                                              readonly 
+                                                              value="@scenario.Value.Body">@scenario.Value.Body</textarea>
+                                                    <button type="button" 
+                                                            class="absolute top-2 right-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                                                            @onclick="@(() => OpenBodyEditor(entity.Key, scenario.Key))">
+                                                        Edit
+                                                    </button>
                                                 </div>
                                             </div>
             
@@ -165,7 +179,7 @@
                                                     <ApplicationPropertiesEditor 
                                                         Title="Application Properties"
                                                         Properties="@_appPropsLists[scenarioKey]"
-                                                        OnPropertiesChanged="@(() => SaveAppPropertiesFromList(entity.Key, scenario.Key))" />
+                                                        OnPropertiesChanged="@(() => { SaveAppPropertiesFromList(entity.Key, scenario.Key); MarkDirty(); })" />
                                                 </div>
                                             }
             
@@ -175,7 +189,7 @@
                                                     <BrokerPropertiesEditor 
                                                         Title="Broker Properties"
                                                         Properties="@_brokerPropsLists[scenarioKey]"
-                                                        OnPropertiesChanged="@(() => SaveBrokerPropertiesFromList(entity.Key, scenario.Key))"
+                                                        OnPropertiesChanged="@(() => { SaveBrokerPropertiesFromList(entity.Key, scenario.Key); MarkDirty(); })"
                                                         OnMessage="@((m) => { _message = m; StateHasChanged(); })" />
                                                 </div>
                                             }
@@ -211,20 +225,45 @@
             </div>
         </div>
 
-        <!-- Import/Export JSON Card -->
+        <!-- Import/Export Card -->
         <div class="bg-slate-800 rounded p-6">
-            <h2 class="text-xl font-semibold mb-4">Import/Export Settings as JSON</h2>
-            <p class="text-sm text-slate-400 mb-3">Export your settings to backup or share, or import settings from JSON.</p>
-            <textarea rows="10" class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded font-mono text-sm" 
-                      @bind="_importJson" 
-                      placeholder="Paste settings JSON here..."></textarea>
-            <div class="mt-3 flex gap-2">
-                <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ImportSettings">Import JSON</button>
-                <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => _importJson = string.Empty">Clear</button>
+            <h2 class="text-xl font-semibold mb-4">Import/Export Settings</h2>
+            <p class="text-sm text-slate-400 mb-4">Import settings from a JSON file or export your current settings to backup or share.</p>
+            <div class="flex gap-3">
+                <button class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2" @onclick="TriggerFileImport">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    Import Settings from File
+                </button>
+                <button class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2" @onclick="ExportSettings">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+                    </svg>
+                    Export Settings to File
+                </button>
             </div>
         </div>
     </div>
 </main>
+
+@if (_showNavigationWarning)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 border border-slate-700">
+            <h3 class="text-lg font-semibold mb-4 text-yellow-400">Unsaved Changes</h3>
+            <p class="text-slate-300 mb-6">You have in-memory changes which should be saved to the settings.json file. Are you sure you want to leave without saving?</p>
+            <div class="flex gap-3">
+                <button class="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 flex-1" @onclick="ConfirmNavigation">
+                    Leave Without Saving
+                </button>
+                <button class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 flex-1" @onclick="CancelNavigation">
+                    Stay
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_showDuplicateDialog)
 {
@@ -257,10 +296,34 @@
     </div>
 }
 
+@* Modal for editing scenario body *@
+@if (_showBodyEditorModal)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @onclick="CloseBodyEditor">
+        <div class="bg-slate-800 rounded-lg p-6 w-11/12 h-5/6 max-w-6xl flex flex-col" @onclick:stopPropagation="true">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-slate-100">Edit Scenario Body - @_editingScenarioKey</h2>
+                <button type="button" class="text-slate-400 hover:text-slate-100 text-2xl" @onclick="CloseBodyEditor">&times;</button>
+            </div>
+            <div class="flex-1 border border-slate-700 rounded overflow-hidden">
+                <StandaloneCodeEditor 
+                    @ref="_modalBodyEditor" 
+                    Id="modal-body-editor"
+                    CssClass="h-full w-full"
+                    ConstructionOptions="GetModalEditorConstructionOptions"
+                    OnDidInit="OnModalEditorInit" />
+            </div>
+            <div class="flex gap-2 mt-4">
+                <button type="button" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="SaveBodyEditorChanges">Save</button>
+                <button type="button" class="px-4 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="CloseBodyEditor">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private Models.Settings _settings = new();
     private string _message = string.Empty;
-    private string _importJson = string.Empty;
     
     private string _newContentType = string.Empty;
     private string _newCommonPropKey = string.Empty;
@@ -274,12 +337,23 @@
     private Dictionary<string, List<ApplicationPropertiesEditor.PropertyItem>> _appPropsLists = new();
     private Dictionary<string, List<BrokerPropertiesEditor.PropertyItem>> _brokerPropsLists = new();
     
-    // Monaco editor instances for each scenario
-    private Dictionary<string, StandaloneCodeEditor> _bodyEditors = new();
+    // Modal body editor
+    private StandaloneCodeEditor? _modalBodyEditor;
+    private bool _showBodyEditorModal = false;
+    private string _editingScenarioKey = string.Empty;
+    private string _modalEditingEntityName = string.Empty;
+    private string _modalEditingScenarioName = string.Empty;
     
     // Entity name editing fields
     private string? _editingEntityName = null;
     private string _newEntityNameValue = string.Empty;
+
+    // File input component reference
+    private InputFile? _fileInputComponent;
+
+    // Dirty tracking
+    private bool _isDirty = false;
+    private bool _showNavigationWarning = false;
 
     // Duplicate scenario dialog fields
     private bool _showDuplicateDialog = false;
@@ -364,12 +438,6 @@
                     _brokerPropsLists.Remove(oldKey);
                 }
                 
-                if (_bodyEditors.ContainsKey(oldKey))
-                {
-                    _bodyEditors[newKey] = _bodyEditors[oldKey];
-                    _bodyEditors.Remove(oldKey);
-                }
-                
                 if (_expandedScenarios.Contains(oldKey))
                 {
                     _expandedScenarios.Remove(oldKey);
@@ -378,6 +446,7 @@
             }
             
             _message = $"Renamed entity from '{oldEntityName}' to '{_newEntityNameValue}'";
+            MarkDirty();
         }
         
         _editingEntityName = null;
@@ -455,39 +524,64 @@
         };
     }
 
-    private async Task OnEditorInit(string scenarioKey)
+    // Modal body editor methods
+    private void OpenBodyEditor(string entityName, string scenarioName)
     {
-        if (_bodyEditors.TryGetValue(scenarioKey, out var editor))
+        _modalEditingEntityName = entityName;
+        _modalEditingScenarioName = scenarioName;
+        _editingScenarioKey = $"{entityName}:{scenarioName}";
+        _showBodyEditorModal = true;
+    }
+
+    private async Task OnModalEditorInit()
+    {
+        if (_modalBodyEditor != null &&
+            _settings.CannedMessages.TryGetValue(_modalEditingEntityName, out var scenarios) &&
+            scenarios.TryGetValue(_modalEditingScenarioName, out var msg) &&
+            msg != null)
         {
-            var parts = scenarioKey.Split(':');
-            var entityName = parts[0];
-            var scenarioName = parts[1];
-            
-            if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
-                scenarios.TryGetValue(scenarioName, out var msg) &&
-                msg != null)
-            {
-                await editor.SetValue(msg.Body ?? "{}");
-            }
+            await _modalBodyEditor.SetValue(msg.Body ?? "{}");
         }
     }
 
-    private async Task OnContentTypeChanged(string scenarioKey)
+    private StandaloneEditorConstructionOptions GetModalEditorConstructionOptions(StandaloneCodeEditor editor)
     {
-        if (_bodyEditors.TryGetValue(scenarioKey, out var editor))
+        var contentType = "application/json";
+        if (_settings.CannedMessages.TryGetValue(_modalEditingEntityName, out var scenarios) &&
+            scenarios.TryGetValue(_modalEditingScenarioName, out var msg) &&
+            msg != null)
         {
-            var parts = scenarioKey.Split(':');
-            var entityName = parts[0];
-            var scenarioName = parts[1];
-            
-            if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
-                scenarios.TryGetValue(scenarioName, out var msg) &&
-                msg != null)
-            {
-                var model = await editor.GetModel();
-                await Global.SetModelLanguage(model, GetMonacoLanguage(msg.ContentType ?? "application/json"));
-            }
+            contentType = msg.ContentType ?? "application/json";
         }
+
+        return new StandaloneEditorConstructionOptions
+        {
+            Language = GetMonacoLanguage(contentType),
+            Theme = "vs-dark",
+            AutomaticLayout = true,
+            Minimap = new EditorMinimapOptions { Enabled = false }
+        };
+    }
+
+    private async Task SaveBodyEditorChanges()
+    {
+        if (_modalBodyEditor != null &&
+            _settings.CannedMessages.TryGetValue(_modalEditingEntityName, out var scenarios) &&
+            scenarios.TryGetValue(_modalEditingScenarioName, out var msg) &&
+            msg != null)
+        {
+            msg.Body = await _modalBodyEditor.GetValue();
+            MarkDirty();
+        }
+        CloseBodyEditor();
+    }
+
+    private void CloseBodyEditor()
+    {
+        _showBodyEditorModal = false;
+        _editingScenarioKey = string.Empty;
+        _modalEditingEntityName = string.Empty;
+        _modalEditingScenarioName = string.Empty;
     }
 
     private List<ApplicationPropertiesEditor.PropertyItem> GetAppPropertiesList(string entityName, string scenarioName)
@@ -616,39 +710,60 @@
         StateHasChanged();
     }
 
+    private void MarkDirty()
+    {
+        if (!_isDirty)
+        {
+            _isDirty = true;
+            StateHasChanged();
+        }
+    }
+
     private void GoBack()
     {
         Navigation.NavigateTo("/");
     }
 
+    private void HandleGoBack()
+    {
+        if (_isDirty)
+        {
+            _showNavigationWarning = true;
+            StateHasChanged();
+        }
+        else
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private void ConfirmNavigation()
+    {
+        _showNavigationWarning = false;
+        _isDirty = false;
+        Navigation.NavigateTo("/");
+    }
+
+    private void CancelNavigation()
+    {
+        _showNavigationWarning = false;
+        StateHasChanged();
+    }
+
     private async Task SaveSettings()
     {
-        // Save all editor values back to the settings before saving
+        // Save property lists back to the settings
         foreach (var entity in _settings.CannedMessages)
         {
             foreach (var scenario in entity.Value)
             {
-                var key = $"{entity.Key}:{scenario.Key}";
-                
-                // Get value from Monaco editor if it exists
-                if (_bodyEditors.TryGetValue(key, out var editor) && scenario.Value != null)
-                {
-                    try
-                    {
-                        scenario.Value.Body = await editor.GetValue();
-                    }
-                    catch
-                    {
-                        // Editor might not be initialized yet, skip
-                    }
-                }
-                
                 SaveAppPropertiesFromList(entity.Key, scenario.Key);
                 SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
             }
         }
         
         SettingsService.UpdateSettings(_settings);
+        _isDirty = false; // Clear dirty flag after successful save
         _message = "Settings saved successfully!";
         StateHasChanged();
         await Task.Delay(3000);
@@ -658,46 +773,51 @@
 
     private async Task ExportSettings()
     {
-        // Save all editor values before exporting
+        // Save property lists before exporting
         foreach (var entity in _settings.CannedMessages)
         {
             foreach (var scenario in entity.Value)
             {
-                var key = $"{entity.Key}:{scenario.Key}";
-                
-                // Get value from Monaco editor if it exists
-                if (_bodyEditors.TryGetValue(key, out var editor) && scenario.Value != null)
-                {
-                    try
-                    {
-                        scenario.Value.Body = await editor.GetValue();
-                    }
-                    catch
-                    {
-                        // Editor might not be initialized yet, skip
-                    }
-                }
-                
                 SaveAppPropertiesFromList(entity.Key, scenario.Key);
                 SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
             }
         }
-        _importJson = SettingsService.ExportSettingsAsJson();
+        
+        // Export to JSON and open in new tab
+        var json = SettingsService.ExportSettingsAsJson();
+        var fileName = $"asb-emulator-settings-{DateTime.Now:yyyyMMdd-HHmmss}.json";
+        await JSRuntime.InvokeVoidAsync("downloadJsonFile", json, fileName);
     }
 
-    private void ImportSettings()
+    private async Task TriggerFileImport()
+    {
+        if (_fileInputComponent?.Element != null)
+        {
+            await JSRuntime.InvokeVoidAsync("triggerFileInput", _fileInputComponent.Element);
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
     {
         try
         {
-            SettingsService.ImportSettingsFromJson(_importJson);
-            _settings = SettingsService.GetSettings();
-            InitializePropertyLists();
-            _bodyEditors.Clear(); // Clear editor cache so they reinitialize with new data
-            _message = "Settings imported successfully!";
+            var file = e.File;
+            if (file != null)
+            {
+                using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB max
+                using var reader = new StreamReader(stream);
+                var json = await reader.ReadToEndAsync();
+                
+                SettingsService.ImportSettingsFromJson(json);
+                _settings = SettingsService.GetSettings();
+                InitializePropertyLists();
+                _isDirty = false; // Reset dirty flag after successful import
+                _message = "Settings imported successfully!";
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            _message = "Error: Invalid JSON format";
+            _message = $"Error importing settings: {ex.Message}";
         }
     }
 
@@ -708,6 +828,7 @@
         {
             _settings.ContentTypes.Add(_newContentType);
             _newContentType = string.Empty;
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -717,6 +838,7 @@
         if (index >= 0 && index < _settings.ContentTypes.Count)
         {
             _settings.ContentTypes.RemoveAt(index);
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -729,6 +851,7 @@
             _settings.CommonApplicationProperties.Add(new KeyValuePair<string, string>(_newCommonPropKey, _newCommonPropValue ?? string.Empty));
             _newCommonPropKey = string.Empty;
             _newCommonPropValue = string.Empty;
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -738,6 +861,7 @@
         if (index >= 0 && index < _settings.CommonApplicationProperties.Count)
         {
             _settings.CommonApplicationProperties.RemoveAt(index);
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -750,6 +874,7 @@
             _settings.CannedMessages[_newEntityName] = new Dictionary<string, CannedMessage>();
             _newScenarioNames[_newEntityName] = string.Empty;
             _newEntityName = string.Empty;
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -759,15 +884,15 @@
         _settings.CannedMessages.Remove(entityName);
         _newScenarioNames.Remove(entityName);
         
-        // Clean up property lists cache and editors
+        // Clean up property lists cache
         var keysToRemove = _appPropsLists.Keys.Where(k => k.StartsWith($"{entityName}:")).ToList();
         foreach (var key in keysToRemove)
         {
             _appPropsLists.Remove(key);
             _brokerPropsLists.Remove(key);
-            _bodyEditors.Remove(key);
         }
         
+        MarkDirty();
         StateHasChanged();
     }
 
@@ -795,6 +920,7 @@
             _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
             _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
             
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -808,9 +934,9 @@
             var key = $"{entityName}:{scenarioName}";
             _appPropsLists.Remove(key);
             _brokerPropsLists.Remove(key);
-            _bodyEditors.Remove(key);
             _expandedScenarios.Remove(key);
             
+            MarkDirty();
             StateHasChanged();
         }
     }
@@ -913,6 +1039,9 @@
             .ToList();
         
         _message = $"Duplicated '{_duplicateSourceScenario}' to '{_duplicateNewName}'";
+        
+        // Mark as dirty since we added a scenario
+        MarkDirty();
         
         // Close dialog
         CancelDuplicate();

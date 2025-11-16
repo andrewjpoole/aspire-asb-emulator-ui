@@ -1,5 +1,6 @@
 @page "/"
 @rendermode InteractiveServer
+@implements IDisposable
 @using System.Threading
 @inject AspireAsbEmulatorUi.App.Services.AsbEmulatorSqlEntityRepository Repo
 @inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
@@ -25,8 +26,17 @@
             <div class="p-4 border-b border-slate-700 bg-slate-850">
                 <div class="flex items-center gap-3 mb-4">
                     <label class="text-sm text-slate-300 font-medium">Filter</label>
-                    <input @bind="_filter" placeholder="search by name or id" class="bg-slate-900 border border-slate-600 text-slate-100 px-3 py-1 rounded flex-1" />
-                    <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ApplyFilter">Apply</button>
+                    <div class="relative flex-1">
+                        <input @bind="_filter" @bind:event="oninput" @bind:after="OnFilterChanged" placeholder="search by name or id" class="bg-slate-900 border border-slate-600 text-slate-100 px-3 py-1 rounded w-full pr-8" />
+                        @if (!string.IsNullOrWhiteSpace(_filter))
+                        {
+                            <button @onclick="ClearFilter" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200" title="Clear filter">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        }
+                    </div>
                 </div>
 
                 <div class="flex items-center justify-between">
@@ -224,6 +234,7 @@
     private string _sendResult = string.Empty;
 
     private string _filter = string.Empty;
+    private System.Threading.Timer? _filterDebounceTimer;
 
     private string _activeTab = "viewer";
 
@@ -254,6 +265,28 @@
         {
             _loading = false;
         }
+    }
+
+    private void OnFilterChanged()
+    {
+        // Cancel any existing timer
+        _filterDebounceTimer?.Dispose();
+        
+        // Start a new timer that will trigger filtering after 3 seconds
+        _filterDebounceTimer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(() =>
+            {
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
+    }
+
+    private void ClearFilter()
+    {
+        _filter = string.Empty;
+        _filterDebounceTimer?.Dispose();
+        StateHasChanged();
     }
 
     private void ApplyFilter()
@@ -435,5 +468,11 @@
     {
         // forward to existing handler using a synthetic ChangeEventArgs
         return OnAutoRefreshChanged(new ChangeEventArgs { Value = enable });
-    }    
+    }
+
+    public void Dispose()
+    {
+        _filterDebounceTimer?.Dispose();
+        _autoRefreshTimer?.Dispose();
+    }
 }
