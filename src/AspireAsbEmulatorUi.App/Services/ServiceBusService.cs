@@ -121,6 +121,7 @@ public class ServiceBusService : IAsyncDisposable
         {
             results.Add(ConvertToDisplayedMessage(m));
         }
+        _logger.LogInformation("Peeked {Count} message(s) from '{Entity}'", results.Count, clean);
         return results;
     }
 
@@ -143,6 +144,7 @@ public class ServiceBusService : IAsyncDisposable
         {
             results.Add(ConvertToDisplayedMessage(m));
         }
+        _logger.LogInformation("Received and deleted {Count} message(s) from '{Entity}'", results.Count, clean);
         return results;
     }
 
@@ -163,6 +165,8 @@ public class ServiceBusService : IAsyncDisposable
 
         var sender = Client.CreateSender(clean);
         await sender.SendMessageAsync(message);
+        _logger.LogInformation("Successfully sent pre-built message to '{Entity}' - MessageId: {MessageId}, BodySize: {Size} bytes, AppProps: {AppPropsCount}", 
+            clean, message.MessageId ?? "(none)", message.Body.ToMemory().Length, message.ApplicationProperties?.Count ?? 0);
     }
 
     public async Task SendMessageAsync(string queueName, string body, Dictionary<string, object>? applicationProperties = null, IDictionary<string, object>? brokerProperties = null)
@@ -230,6 +234,8 @@ public class ServiceBusService : IAsyncDisposable
         }
 
         await sender.SendMessageAsync(msg);
+        _logger.LogInformation("Successfully sent message to '{Entity}' - MessageId: {MessageId}, BodySize: {Size} bytes, AppProps: {AppPropsCount}, ContentType: {ContentType}", 
+            clean, msg.MessageId ?? "(none)", body?.Length ?? 0, applicationProperties?.Count ?? 0, msg.ContentType);
     }    
 
     private async Task<bool> EntityExistsViaRepoAsync(string cleanedEntityNameLower)

@@ -45,8 +45,6 @@ public class AsbEmulatorSqlEntityRepository
             var typeByte = reader.GetByte(reader.GetOrdinal("Type"));
             var messageCount = reader.GetInt64(reader.GetOrdinal("MessageCount"));
 
-            Console.WriteLine($"{entityGroupId} {id} {fullName} {typeByte} {messageCount}");
-
             if (string.IsNullOrEmpty(fullName))
                 continue;
 
