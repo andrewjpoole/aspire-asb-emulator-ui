@@ -34,10 +34,6 @@
         </div>
     }
 
-    <div class="mb-3">
-        <HandyClipboardValues />
-    </div>
-
     <label class="text-sm text-slate-400 block mb-1">Content type</label>
     <div class="mb-3">
         <select @bind="_contentType" @bind:after="OnContentTypeChanged" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-64">
@@ -373,6 +369,8 @@
         if (_editor != null)
         {
             await _editor.SetValue(_body);
+            // Add custom context menu actions
+            await JSRuntime.InvokeVoidAsync("monacoContextMenu.addCustomActions", "message-body-editor");
         }
     }
 

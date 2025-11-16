@@ -518,6 +518,8 @@
             msg != null)
         {
             await _modalBodyEditor.SetValue(msg.Body ?? "{}");
+            // Add custom context menu actions
+            await JSRuntime.InvokeVoidAsync("monacoContextMenu.addCustomActions", "modal-body-editor");
         }
     }
 
