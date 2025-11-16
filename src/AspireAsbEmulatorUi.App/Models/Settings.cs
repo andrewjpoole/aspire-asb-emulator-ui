@@ -1,6 +1,6 @@
 namespace AspireAsbEmulatorUi.App.Models;
 
-public class AppSettings
+public class Settings
 {
     public List<string> ContentTypes { get; set; } = new()
     {

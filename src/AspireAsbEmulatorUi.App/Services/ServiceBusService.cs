@@ -146,6 +146,25 @@ public class ServiceBusService : IAsyncDisposable
         return results;
     }
 
+    /// <summary>
+    /// Sends a pre-built ServiceBusMessage to a queue or topic
+    /// </summary>
+    public async Task SendMessageAsync(string queueName, ServiceBusMessage message)
+    {
+        var clean = CleanEntityName(queueName);
+        _logger.LogInformation("Sending pre-built message to entity '{Entity}' (cleaned: '{Clean}')", queueName, clean);
+
+        if (!await EntityExistsViaRepoAsync(clean))
+        {
+            var errMsg = $"Entity '{clean}' was not found in the Service Bus namespace (from repository).";
+            _logger.LogWarning(errMsg);
+            throw new InvalidOperationException(errMsg);
+        }
+
+        var sender = Client.CreateSender(clean);
+        await sender.SendMessageAsync(message);
+    }
+
     public async Task SendMessageAsync(string queueName, string body, Dictionary<string, object>? applicationProperties = null, IDictionary<string, object>? brokerProperties = null)
     {
         var clean = CleanEntityName(queueName);

@@ -1,5 +1,6 @@
 using AspireAsbEmulatorUi.App.Components;
 using AspireAsbEmulatorUi.App.Services;
+using AspireAsbEmulatorUi.App.Api;
 using System.Net.Sockets;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,18 +56,18 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
     var cfg = sp.GetRequiredService<IConfiguration>();
     var logger = sp.GetRequiredService<ILogger<ServiceBusService>>();
     var repo = sp.GetRequiredService<AsbEmulatorSqlEntityRepository>();
-    
+
     // Get the resource name to build the connection string key
     var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? "myservicebus";
     logger.LogInformation("ASB Resource Name: {ResourceName}", resourceName);
-    
+
     // Build the connection string key (Aspire convention: ConnectionStrings__{ResourceName})
     var connectionStringKey = $"ConnectionStrings__{resourceName}";
 
     // Try various formats for the connection string
     var cs = cfg[connectionStringKey]
              ?? cfg[$"ConnectionStrings:{resourceName}"];
-    
+
     if (!string.IsNullOrWhiteSpace(cs))
     {
         // Log the connection string format (without sensitive data)
@@ -77,7 +78,7 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
     {
         logger.LogWarning("No ASB connection string found for resource: {ResourceName}", resourceName);
     }
-    
+
     return new ServiceBusService(cs ?? string.Empty, logger, repo);
 });
 
@@ -97,6 +98,9 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseAntiforgery();
+
+// Map integration test API endpoints (if enabled)
+app.MapIntegrationTestEndpoints();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

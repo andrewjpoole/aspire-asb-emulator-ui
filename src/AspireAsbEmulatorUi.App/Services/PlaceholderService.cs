@@ -94,4 +94,9 @@ public class PlaceholderService
         }
         return result;
     }
+
+    /// <summary>
+    /// Alias for ProcessPlaceholders - evaluates placeholders in a string
+    /// </summary>
+    public string EvaluatePlaceholders(string input) => ProcessPlaceholders(input);
 }

@@ -1,4 +1,5 @@
 using Aspire.Hosting.Azure;
+using Aspire.Hosting;
 using Microsoft.Extensions.Logging;
 using Projects;
 
@@ -29,56 +30,31 @@ topic.AddServiceBusSubscription("sub1")
          subscription.ForwardTo = "topic-sub1-fwd";
      });
 
+// Add ASB Emulator UI using the extension method
+//var apiService = builder.AddAsbEmulatorUi("asb-ui", serviceBus, options =>
+//{
+//    options.ConfigureSettings = settings =>
+//    {
+//        // Add some example canned messages
+//        settings.CannedMessages["queue-one"] = new Dictionary<string, CannedMessage>
+//        {
+//            ["test-order"] = new CannedMessage
+//            {
+//                ContentType = "application/json",
+//                Body = """{ "orderId": "~newGuid~", "timestamp": "~now~", "amount": 99.99 }""",
+//                ApplicationProperties = new Dictionary<string, object>
+//                {
+//                    ["MessageType"] = "MT_EVENT",
+//                    ["EventType"] = "OrderCreated"
+//                }
+//            }
+//        };
 
-var apiService = builder.AddProject<AspireAsbEmulatorUi_App>("asb-ui")
-    .WithReference(serviceBus)
-    .WaitFor(serviceBus)
-    .ExcludeFromManifest()
-    .WithEnvironment(async (context) =>
-    {
-        // No runtime environment configuration when publishing the app.
-        if (context.ExecutionContext.IsPublishMode)
-            return;
+//        settings.CommonApplicationProperties.Add(new KeyValuePair<string, string>("Source", "Integration-Test"));
+//    };
+//})
+//.WithIntegrationTestApi(enabled: true);  // Enable integration test API
 
-        // Find the ASB emulator resource
-        var serviceBusResource = builder.Resources.OfType<AzureServiceBusResource>().SingleOrDefault()
-            ?? throw new Exception("Unable to find resource of type AzureServiceBusResource");
-
-        // Expose the resource name, this is used to build a connection string in the app.
-        context.EnvironmentVariables["asb-resource-name"] = serviceBusResource.Name;
-
-        // Find the SQL container that backs the emulator and expose its port
-        var sqlAsbContainerResource = builder.Resources.SingleOrDefault(r => r.Name == $"{serviceBusResource.Name}-mssql")
-            ?? throw new Exception($"Unable to find ASB emulator resource with name {serviceBusResource.Name}-mssql");
-
-        if (!sqlAsbContainerResource.TryGetUrls(out var urls) || urls == null || !urls.Any())
-            throw new Exception("Unable to get any SQL endpoint URLs from ASB emulator resource.");
-
-        var firstUrl = urls.First();
-        var sqlPort = firstUrl.Endpoint?.Port
-            ?? throw new Exception("Unable to get SQL endpoint port from ASB emulator resource.");
-
-        // Expose the port that the ASB emulator's MS SQK backend is running on, which changes everytime Aspire is run, this is used to build a connection string in the app.
-        context.EnvironmentVariables["asb-sql-port"] = sqlPort;
-
-        // Process container environment variables to extract the SQL password parameter (if present)
-        await sqlAsbContainerResource.ProcessEnvironmentVariableValuesAsync(
-            context.ExecutionContext,
-            async (key, unprocessedValue, processedValue, exception) =>
-            {
-                if (key != "MSSQL_SA_PASSWORD")
-                    return;
-
-                if(string.IsNullOrEmpty(processedValue))
-                {
-                    context.Logger.LogError("MSSQL_SA_PASSWORD environment variable returned null or empty value when resolving ASB emulator SQL password.");
-                    return;
-                }
-
-                context.EnvironmentVariables["asb-sql-password"] = processedValue;
-            },
-            context.Logger,
-            CancellationToken.None);
-    });
+builder.AddAsbEmulatorUi("asb-ui", serviceBus);
 
 builder.Build().Run();

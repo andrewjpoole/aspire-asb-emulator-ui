@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -11,6 +11,10 @@
     <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
     <PackageReference Include="BlazorMonaco" Version="3.4.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="wwwroot\js\" />
   </ItemGroup>
 
 </Project>

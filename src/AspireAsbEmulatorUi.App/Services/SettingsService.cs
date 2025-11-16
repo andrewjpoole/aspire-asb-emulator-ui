@@ -1,4 +1,5 @@
 using AspireAsbEmulatorUi.App.Models;
+using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 
 namespace AspireAsbEmulatorUi.App.Services;
@@ -6,11 +7,35 @@ namespace AspireAsbEmulatorUi.App.Services;
 public class SettingsService
 {
     private const string StorageKey = "aspire-asb-emulator-settings";
-    private AppSettings _settings;
+    private Settings _settings;
+    private readonly IConfiguration _configuration;
 
-    public SettingsService()
+    public SettingsService(IConfiguration configuration)
     {
-        _settings = new AppSettings();
+        _configuration = configuration;
+        _settings = new Settings();
+
+        // First, try to load from settings override (passed from Aspire AppHost)
+        var settingsOverride = _configuration["AsbEmulatorUi__SettingsOverride"]
+                              ?? _configuration["ASBEMULATORUI__SETTINGSOVERRIDE"];
+
+        if (!string.IsNullOrWhiteSpace(settingsOverride))
+        {
+            try
+            {
+                var deserializedSettings = JsonSerializer.Deserialize<Settings>(settingsOverride,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (deserializedSettings != null)
+                {
+                    _settings = deserializedSettings;
+                    return; // Use override and skip file loading
+                }
+            }
+            catch
+            {
+                // Ignore and fall through to file loading
+            }
+        }
 
         // Try to load default settings from a settings.json file located in the app base directory
         try
@@ -29,7 +54,8 @@ public class SettingsService
             if (!string.IsNullOrEmpty(file))
             {
                 var json = File.ReadAllText(file);
-                var settings = JsonSerializer.Deserialize<AppSettings>(json);
+                var settings = JsonSerializer.Deserialize<Settings>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (settings != null)
                 {
                     _settings = settings;
@@ -42,12 +68,12 @@ public class SettingsService
         }
     }
 
-    public AppSettings GetSettings()
+    public Settings GetSettings()
     {
         return _settings;
     }
 
-    public void UpdateSettings(AppSettings settings)
+    public void UpdateSettings(Settings settings)
     {
         _settings = settings;
     }
@@ -61,7 +87,8 @@ public class SettingsService
     {
         try
         {
-            var settings = JsonSerializer.Deserialize<AppSettings>(json);
+            var settings = JsonSerializer.Deserialize<Settings>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (settings != null)
             {
                 _settings = settings;
