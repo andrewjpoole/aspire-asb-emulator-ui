@@ -278,10 +278,16 @@
         _isDlqSelected = false;
         _sendResult = string.Empty;
         
-        // Auto-switch to viewer tab if selecting a subscription
+        // Auto-switch tabs based on entity type
         if (e.EntityType == "Subscription")
         {
+            // Subscriptions can only view
             _activeTab = "viewer";
+        }
+        else if (e.EntityType == "Topic")
+        {
+            // Topics can only send
+            _activeTab = "sender";
         }
     }
 
@@ -292,7 +298,11 @@
 
     private void ShowViewer()
     {
-        _activeTab = "viewer";
+        // Don't allow switching to viewer for Topics
+        if (_selectedEntityType != "Topic")
+        {
+            _activeTab = "viewer";
+        }
     }
 
     private void ShowSender()

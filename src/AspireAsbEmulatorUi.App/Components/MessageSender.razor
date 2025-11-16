@@ -24,7 +24,7 @@
         <div class="mb-3">
             <label class="text-sm text-slate-400 block mb-1">Load Canned Message</label>
             <select @bind="_selectedCannedMessage" @bind:after="LoadCannedMessage" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-full">
-                <option value="">-- Select a canned message --</option>
+                <option value="">Select a canned message...</option>
                 @foreach (var scenario in _cannedMessages)
                 {
                     <option value="@scenario">@scenario</option>

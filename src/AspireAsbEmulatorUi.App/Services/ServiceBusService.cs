@@ -57,17 +57,47 @@ public class ServiceBusService : IAsyncDisposable
             return entityName ?? string.Empty;
 
         var clean = entityName;
+        
+        // Remove SBEMULATORNS prefix if present
         if (clean.StartsWith("SBEMULATORNS", StringComparison.OrdinalIgnoreCase))
         {
             clean = clean.Substring("SBEMULATORNS".Length);
         }
+        
         clean = clean.TrimStart(':', '|', '/', '\\', '.', '-', '_');
+        
+        // Split on : to remove QUEUE: or TOPIC: prefix
         var parts = clean.Split(new[] { ':', '|' }, 2);
         if (parts.Length == 2 && (parts[0].Equals("QUEUE", StringComparison.OrdinalIgnoreCase) || parts[0].Equals("TOPIC", StringComparison.OrdinalIgnoreCase)))
         {
             clean = parts[1];
         }
+        
         clean = clean.TrimStart(':', '|', '/', '\\', '.', '-', '_');
+        
+        // Check if this is a subscription (contains |)
+        // Format: TOPIC-NAME|SUBSCRIPTION-NAME
+        // Should become: topic-name/subscriptions/subscription-name
+        if (clean.Contains('|'))
+        {
+            var subParts = clean.Split('|', 2);
+            if (subParts.Length == 2)
+            {
+                var topicName = subParts[0].ToLowerInvariant();
+                var subName = subParts[1].ToLowerInvariant();
+                
+                // Check if subscription name ends with /$DeadLetterQueue
+                if (subName.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Remove the DLQ suffix, format properly, then add it back
+                    subName = subName.Substring(0, subName.Length - "/$deadletterqueue".Length);
+                    return $"{topicName}/subscriptions/{subName}/$DeadLetterQueue";
+                }
+                
+                return $"{topicName}/subscriptions/{subName}";
+            }
+        }
+        
         return clean.ToLowerInvariant();
     }
 
@@ -188,9 +218,42 @@ public class ServiceBusService : IAsyncDisposable
         try
         {
             var entities = await _repo.GetEntitiesAsync();
+            
+            // Check if it's a subscription path (contains /subscriptions/)
+            if (cleanedEntityNameLower.Contains("/subscriptions/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Format: topic-name/subscriptions/sub-name or topic-name/subscriptions/sub-name/$DeadLetterQueue
+                var isDlq = cleanedEntityNameLower.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase);
+                var pathWithoutDlq = isDlq 
+                    ? cleanedEntityNameLower.Substring(0, cleanedEntityNameLower.Length - "/$deadletterqueue".Length)
+                    : cleanedEntityNameLower;
+                
+                var subParts = pathWithoutDlq.Split(new[] { "/subscriptions/" }, StringSplitOptions.None);
+                if (subParts.Length == 2)
+                {
+                    var topicName = subParts[0];
+                    var subName = subParts[1];
+                    
+                    // Look for subscription with format TOPIC-NAME|SUB-NAME
+                    var expectedFormat = $"{topicName}|{subName}";
+                    
+                    foreach (var e in entities)
+                    {
+                        if (e.EntityType == "Subscription")
+                        {
+                            var candidate = CleanEntityNameForComparison(e.Name);
+                            if (string.Equals(candidate, expectedFormat, StringComparison.OrdinalIgnoreCase))
+                                return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            
+            // For queues and topics, do simple name matching
             foreach (var e in entities)
             {
-                var candidate = CleanEntityName(e.Name);
+                var candidate = CleanEntityNameForComparison(e.Name);
                 if (string.Equals(candidate, cleanedEntityNameLower, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
@@ -201,6 +264,15 @@ public class ServiceBusService : IAsyncDisposable
             _logger.LogWarning(ex, "Failed to check entity existence via repository");
             return false;
         }
+    }
+
+    private static string CleanEntityNameForComparison(string entityName)
+    {
+        if (string.IsNullOrWhiteSpace(entityName))
+            return string.Empty;
+        
+        // Just convert to lowercase for comparison, don't transform subscriptions
+        return entityName.ToLowerInvariant();
     }
 
     private static Models.DisplayedMessage ConvertToDisplayedMessage(ServiceBusReceivedMessage m)

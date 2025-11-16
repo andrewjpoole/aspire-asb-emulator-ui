@@ -22,36 +22,63 @@ public class AsbEmulatorSqlEntityRepository
         await conn.OpenAsync(cancellationToken);
 
         var cmd = conn.CreateCommand();
-        // Select entities whose Name starts with SBEMULATORNS and use the MessageCount column
-        cmd.CommandText = @"SELECT TOP (1000) [Id]
-      ,[Name]
-      ,[Type]
-      ,[MessageCount]
-  FROM [SbMessageContainerDatabase00001].[dbo].[EntityLookupTable]
-  WHERE [Name] LIKE 'SBEMULATORNS%'
-  ORDER BY [Name]";
+        cmd.CommandText = @"SELECT TOP (1000) 
+        [EntityGroupId]
+        ,[Id]
+        ,[Name]
+        ,[Type]
+        ,[MessageCount]
+        FROM [SbMessageContainerDatabase00001].[dbo].[EntityLookupTable]
+        WHERE [Name] LIKE 'SBEMULATORNS%'
+        ORDER BY [EntityGroupId], [Type], [Name]";
 
         using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
-        var queues = new Dictionary<string, (long Id, long Active, long Deadletter)>(StringComparer.OrdinalIgnoreCase);
-        var topics = new Dictionary<string, (long Id, long Active, long Deadletter)>(StringComparer.OrdinalIgnoreCase);
-        var subscriptions = new Dictionary<string, (long Id, long Active, long Deadletter, string ParentTopic)>(StringComparer.OrdinalIgnoreCase);
-        const string transferSuffix = "$TRANSFER";
-        char[] separators = new[] { '|', ':', '/', '\\', '.', '-', '_' };
+        // Group entities by EntityGroupId
+        var entityGroups = new Dictionary<Guid, List<(long Id, string Name, byte Type, long MessageCount)>>();
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            // Known schema types: Id bigint, Name nvarchar, Type tinyint, MessageCount bigint
+            var entityGroupId = reader.GetGuid(reader.GetOrdinal("EntityGroupId"));
             var id = reader.GetInt64(reader.GetOrdinal("Id"));
             var fullName = reader.GetString(reader.GetOrdinal("Name"));
             var typeByte = reader.GetByte(reader.GetOrdinal("Type"));
             var messageCount = reader.GetInt64(reader.GetOrdinal("MessageCount"));
 
+            Console.WriteLine($"{entityGroupId} {id} {fullName} {typeByte} {messageCount}");
+
             if (string.IsNullOrEmpty(fullName))
                 continue;
 
-            // Parse the entity name format: SBEMULATORNS:QUEUE:QUEUE-NAME or SBEMULATORNS:TOPIC:TOPIC-NAME
-            // Extract the clean name by removing the prefix
+            if (!entityGroups.ContainsKey(entityGroupId))
+                entityGroups[entityGroupId] = new List<(long, string, byte, long)>();
+
+            entityGroups[entityGroupId].Add((id, fullName, typeByte, messageCount));
+        }
+
+        // Process each entity group
+        foreach (var group in entityGroups.OrderBy(g => g.Value.First().Name))
+        {
+            ProcessEntityGroup(group.Key, group.Value, results);
+        }
+
+        return results;
+    }
+
+    private void ProcessEntityGroup(Guid entityGroupId, List<(long Id, string Name, byte Type, long MessageCount)> entities, List<ServiceBusEntityInfo> results)
+    {
+        // Group by Type 1 (Topics), Type 0 (Queues), and Type 2/3 (Subscriptions)
+        // Note: Subscriptions (Type 2/3) share EntityGroupId with their parent Topic (Type 1)
+        
+        // Find main Queue or Topic (Type 0 without | or Type 1)
+        var mainQueueOrTopic = entities.FirstOrDefault(e => e.Type == 1 || (e.Type == 0 && !e.Name.Contains('|')));
+        
+        if (mainQueueOrTopic != default)
+        {
+            // Process Queue or Topic
+            var fullName = mainQueueOrTopic.Name;
+            var typeByte = mainQueueOrTopic.Type;
+
             string cleanName = fullName;
             if (fullName.StartsWith("SBEMULATORNS:QUEUE:", StringComparison.OrdinalIgnoreCase))
             {
@@ -62,149 +89,105 @@ public class AsbEmulatorSqlEntityRepository
                 cleanName = fullName.Substring("SBEMULATORNS:TOPIC:".Length);
             }
 
-            // Check if this is a subscription by looking for | in the clean name (but not just transfer suffix)
-            var hasSubscriptionSuffix = cleanName.Contains('|') && !cleanName.EndsWith(transferSuffix, StringComparison.OrdinalIgnoreCase);
-            
-            // Determine entity type
-            // Type 0 = Queue or transfer entity
-            // Type 1 = Topic
-            // Type 2 = Subscription
-            // Type 3 = Subscription default
-            string entityType;
-            string? parentTopic = null;
-            
-            if (hasSubscriptionSuffix || typeByte == 2 || typeByte == 3)
-            {
-                // It's a subscription entity
-                entityType = "Subscription";
-                
-                // Extract parent topic name (everything before the first |)
-                var pipeIndex = cleanName.IndexOf('|');
-                if (pipeIndex > 0)
-                {
-                    parentTopic = cleanName.Substring(0, pipeIndex);
-                }
-            }
-            else if (typeByte == 1 || fullName.Contains(":TOPIC:", StringComparison.OrdinalIgnoreCase))
-            {
-                // Type 1 or has TOPIC in the prefix
-                entityType = "Topic";
-            }
-            else
-            {
-                // Type 0 and has QUEUE in the prefix
-                entityType = "Queue";
-            }
-
-            // Determine canonical base name for grouping (strip transfer suffix and any separator before it)
+            string entityType = typeByte == 1 ? "Topic" : "Queue";
             string baseName = cleanName;
-            
-            // Strip $TRANSFER suffix
-            if (baseName.EndsWith(transferSuffix, StringComparison.OrdinalIgnoreCase))
+
+            // Calculate message counts
+            long activeCount = 0;
+            long deadletterCount = 0;
+
+            foreach (var entity in entities.Where(e => e.Type == typeByte || (e.Type == 0 && e.Name.Contains(cleanName))))
             {
-                var pos = baseName.Length - transferSuffix.Length;
-                if (pos > 0 && baseName[pos - 1] == '|') pos--;
-                baseName = baseName.Substring(0, pos);
-            }
-            
-            // Strip $DEFAULT suffix (subscription variant)
-            const string defaultSuffix = "$DEFAULT";
-            if (baseName.EndsWith(defaultSuffix, StringComparison.OrdinalIgnoreCase))
-            {
-                var pos = baseName.Length - defaultSuffix.Length;
-                if (pos > 0 && baseName[pos - 1] == '|') pos--;
-                baseName = baseName.Substring(0, pos);
+                if (entity.Name.Contains("$TRANSFER", StringComparison.OrdinalIgnoreCase))
+                {
+                    deadletterCount += entity.MessageCount;
+                }
+                else
+                {
+                    activeCount += entity.MessageCount;
+                }
             }
 
-            if (entityType == "Subscription")
+            Console.WriteLine($"Adding {entityType}: {baseName} (Active: {activeCount}, DLQ: {deadletterCount}, Parent: N/A)");
+
+            results.Add(new ServiceBusEntityInfo
             {
-                // Handle subscriptions - group by base name, combining counts from all variants
-                // Main entity: active messages
-                // $DEFAULT entity: also active messages (add to active)
-                // $TRANSFER entity: dead-letter messages
+                Id = mainQueueOrTopic.Id,
+                Name = baseName,
+                EntityType = entityType,
+                ParentTopic = null,
+                ActiveMessageCount = activeCount,
+                DeadletterMessageCount = deadletterCount,
+            });
+        }
+
+        // Now process subscriptions (Type 2 and 3) in this group
+        var subscriptionGroups = entities
+            .Where(e => e.Type == 2 || e.Type == 3 || (e.Type == 0 && e.Name.Count(c => c == '|') >= 2))
+            .GroupBy(e =>
+            {
+                // Extract subscription base name (everything before |$TRANSFER or |$DEFAULT)
+                var name = e.Name;
+                if (name.StartsWith("SBEMULATORNS:TOPIC:", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring("SBEMULATORNS:TOPIC:".Length);
+                }
                 
-                if (cleanName.EndsWith(transferSuffix, StringComparison.OrdinalIgnoreCase))
+                // Remove $TRANSFER suffix
+                if (name.EndsWith("|$TRANSFER", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Transfer/DLQ entity - add to deadletter count
-                    if (!subscriptions.TryGetValue(baseName, out var tuple)) 
-                        tuple = (Id: id, Active: 0, Deadletter: 0, ParentTopic: parentTopic ?? string.Empty);
-                    tuple.Deadletter += messageCount;
-                    if (tuple.Id == 0) tuple.Id = id;
-                    subscriptions[baseName] = tuple;
+                    name = name.Substring(0, name.Length - "|$TRANSFER".Length);
+                }
+                
+                // Remove $DEFAULT suffix
+                if (name.EndsWith("|$DEFAULT", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = name.Substring(0, name.Length - "|$DEFAULT".Length);
+                }
+                
+                return name;
+            })
+            .Where(g => !string.IsNullOrEmpty(g.Key));
+
+        foreach (var subGroup in subscriptionGroups)
+        {
+            var baseName = subGroup.Key;
+            var mainSub = subGroup.FirstOrDefault(e => e.Type == 2);
+            
+            if (mainSub == default)
+                continue;
+
+            // Extract parent topic
+            var pipeIndex = baseName.IndexOf('|');
+            string? parentTopic = pipeIndex > 0 ? baseName.Substring(0, pipeIndex) : null;
+
+            // Calculate message counts
+            long activeCount = 0;
+            long deadletterCount = 0;
+
+            foreach (var entity in subGroup)
+            {
+                if (entity.Name.Contains("$TRANSFER", StringComparison.OrdinalIgnoreCase))
+                {
+                    deadletterCount += entity.MessageCount;
                 }
                 else
                 {
-                    // Main entity or $DEFAULT variant - add to active count
-                    if (!subscriptions.TryGetValue(baseName, out var tuple)) 
-                        tuple = (Id: id, Active: 0, Deadletter: 0, ParentTopic: parentTopic ?? string.Empty);
-                    tuple.Active += messageCount;
-                    if (tuple.Id == 0) tuple.Id = id;
-                    subscriptions[baseName] = tuple;
+                    activeCount += entity.MessageCount;
                 }
             }
-            else
-            {
-                var map = string.Equals(entityType, "Topic", StringComparison.OrdinalIgnoreCase) ? topics : queues;
 
-                if (cleanName.EndsWith(transferSuffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    // This is a transfer/DLQ entity
-                    if (!map.TryGetValue(baseName, out var tuple)) tuple = (Id: id, Active: 0, Deadletter: 0);
-                    tuple.Deadletter += messageCount;
-                    if (tuple.Id == 0) tuple.Id = id;
-                    map[baseName] = tuple;
-                }
-                else
-                {
-                    // This is the main entity
-                    if (!map.TryGetValue(baseName, out var tuple)) tuple = (Id: id, Active: 0, Deadletter: 0);
-                    tuple.Active += messageCount;
-                    if (tuple.Id == 0) tuple.Id = id;
-                    map[baseName] = tuple;
-                }
-            }
-        }
+            Console.WriteLine($"Adding Subscription: {baseName} (Active: {activeCount}, DLQ: {deadletterCount}, Parent: {parentTopic ?? "N/A"})");
 
-        // Build results for queues first
-        foreach (var kv in queues.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
-        {
             results.Add(new ServiceBusEntityInfo
             {
-                Id = kv.Value.Id,
-                Name = kv.Key,
-                EntityType = "Queue",
-                ActiveMessageCount = kv.Value.Active,
-                DeadletterMessageCount = kv.Value.Deadletter,
-            });
-        }
-
-        // Then topics
-        foreach (var kv in topics.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            results.Add(new ServiceBusEntityInfo
-            {
-                Id = kv.Value.Id,
-                Name = kv.Key,
-                EntityType = "Topic",
-                ActiveMessageCount = kv.Value.Active,
-                DeadletterMessageCount = kv.Value.Deadletter,
-            });
-        }
-
-        // Finally subscriptions (as children of topics)
-        foreach (var kv in subscriptions.OrderBy(k => k.Value.ParentTopic).ThenBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            results.Add(new ServiceBusEntityInfo
-            {
-                Id = kv.Value.Id,
-                Name = kv.Key,
+                Id = mainSub.Id,
+                Name = baseName,
                 EntityType = "Subscription",
-                ParentTopic = kv.Value.ParentTopic,
-                ActiveMessageCount = kv.Value.Active,
-                DeadletterMessageCount = kv.Value.Deadletter,
+                ParentTopic = parentTopic,
+                ActiveMessageCount = activeCount,
+                DeadletterMessageCount = deadletterCount,
             });
         }
-
-        return results;
     }
 }

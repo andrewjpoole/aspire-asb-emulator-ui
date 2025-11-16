@@ -7,16 +7,9 @@ It should use a nice monospaced font and a fixed dark theme.
 Json/xml in message bodies etc should use blazor monaco editor for syntax highlighting.
 
 TODO
-* default settings.json should have initial settings inside it, starter content types etc.
 * Aspire resource and hosting package
-* Extension methotd to override settings.json
+* Extension method to override settings.json in the Aspire AppHost
 * API for sending canned messages during integration tests?
 * monaco editing mode for settings.json
-* 'Save as canned message' button in MessageSender
-* A Component named HandyClipboardValues.razor, which can be added to cannedmessages and MessageSender, with:
-	* 'new Guid' button in MessageSender
-	* 'now' button in MessageSender which copies a datetime to the clipboard
-	* 'now+1m' button in MessageSender which copies a datetime to the clipboard
-	* 'now+5m' button in MessageSender which copies a datetime to the clipboard
-	* 'now+1h' button in MessageSender which copies a datetime to the clipboard
-* placeholder syntax for ~newGuid~ and ~now+5m~ or ~now+1d~ in CannedMessages which get switched out for real values when sending
+* 'Save as canned message' button in MessageSender and MessageReader
+* how to display forwarding queues??
