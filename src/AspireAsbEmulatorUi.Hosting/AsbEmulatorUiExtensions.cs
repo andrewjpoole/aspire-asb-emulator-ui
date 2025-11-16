@@ -91,9 +91,10 @@ public static class AsbEmulatorUiResourceExtensions
     /// <param name="entitiesWithScenarios">Dictionary of entity names to their canned message scenarios</param>
     /// <returns>The resource builder for chaining</returns>
     /// <exception cref="InvalidOperationException">Thrown when settings have already been overridden via WithOverridenSettingsFile</exception>
-    public static IResourceBuilder<ProjectResource> WithCannedMessages(
-        this IResourceBuilder<ProjectResource> builder,
+    public static IResourceBuilder<T> WithCannedMessages<T>(
+        this IResourceBuilder<T> builder,
         Dictionary<string, Dictionary<string, CannedMessage>> entitiesWithScenarios)
+        where T : IResourceWithEnvironment
     {
         return builder.WithEnvironment(context =>
         {
@@ -157,9 +158,10 @@ public static class AsbEmulatorUiResourceExtensions
     /// <param name="settingsFilePath">The path to the settings JSON file</param>
     /// <returns>The resource builder for chaining</returns>
     /// <exception cref="InvalidOperationException">Thrown when settings have already been overridden via WithCannedMessages</exception>
-    public static IResourceBuilder<ProjectResource> WithOverridenSettingsFile(
-        this IResourceBuilder<ProjectResource> builder,
+    public static IResourceBuilder<T> WithOverridenSettingsFile<T>(
+        this IResourceBuilder<T> builder,
         string settingsFilePath)
+        where T : IResourceWithEnvironment
     {
         return builder.WithEnvironment(context =>
         {

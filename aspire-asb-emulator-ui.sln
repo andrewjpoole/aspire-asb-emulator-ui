@@ -17,6 +17,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ServiceDefaults", "aspire\S
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dummy-apps", "dummy-apps", "{917DE9F4-FF99-49F8-AA1D-4FD0CCADD0BC}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{37561F8F-3F1B-4616-BD44-B50A54E38284}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AspireAsbEmulatorUi.Hosting.Tests", "tests\AspireAsbEmulatorUi.Hosting.Tests\AspireAsbEmulatorUi.Hosting.Tests.csproj", "{E181AC04-E777-3332-BD88-9A9A8D04ACD3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +43,10 @@ Global
 		{7918343B-7F85-4B2E-9125-7C1D0757A826}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7918343B-7F85-4B2E-9125-7C1D0757A826}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7918343B-7F85-4B2E-9125-7C1D0757A826}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E181AC04-E777-3332-BD88-9A9A8D04ACD3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E181AC04-E777-3332-BD88-9A9A8D04ACD3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E181AC04-E777-3332-BD88-9A9A8D04ACD3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E181AC04-E777-3332-BD88-9A9A8D04ACD3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -48,6 +56,7 @@ Global
 		{D88AA688-0903-9213-A957-1163A58D5B79} = {3153FB0F-DA6D-47A3-86D0-73BCC6CA0B5A}
 		{585B49D7-037E-4AAE-9133-256A7BB785C3} = {BA65EEED-101F-425F-A958-A2803B2804E4}
 		{7918343B-7F85-4B2E-9125-7C1D0757A826} = {BA65EEED-101F-425F-A958-A2803B2804E4}
+		{E181AC04-E777-3332-BD88-9A9A8D04ACD3} = {37561F8F-3F1B-4616-BD44-B50A54E38284}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1C2ED6CE-3D7B-4163-BA1F-85222ED506F5}

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TUnit" Version="0.7.*" />
+    <PackageReference Include="TUnit.Assertions" Version="0.7.*" />
+    <PackageReference Include="TUnit.Engine" Version="0.7.*" />
+    <PackageReference Include="NSubstitute" Version="5.*" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.0.0" />
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AspireAsbEmulatorUi.Hosting\AspireAsbEmulatorUi.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>
