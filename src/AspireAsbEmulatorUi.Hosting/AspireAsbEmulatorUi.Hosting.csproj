@@ -4,6 +4,24 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+	<IsPackable>true</IsPackable>
+	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
+	<Version>1.0.0</Version>
+	<PackageReleaseNotes>
+		1.0.0 initial version
+	</PackageReleaseNotes>
+	<Authors>Andrew Poole</Authors>
+	<Description>A UI for the ASB Emulator, view entities, message counts, send, peek and receive messages, canned Messages, also API for automated testing.</Description>
+	<PackageTags>ASB, Service Bus UI, Aspire, Send, Peek, Receive</PackageTags>
+	<RepositoryUrl>https://github.com/andrewjpoole/aspire-asb-emulator-ui</RepositoryUrl>
+	<RepositoryType>git</RepositoryType>
+	<PackageLicenseExpression>MIT</PackageLicenseExpression>
+	<PackageProjectUrl>https://github.com/andrewjpoole/aspire-asb-emulator-ui/README.md</PackageProjectUrl>
+	<IncludeSymbols>true</IncludeSymbols>
+	<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
