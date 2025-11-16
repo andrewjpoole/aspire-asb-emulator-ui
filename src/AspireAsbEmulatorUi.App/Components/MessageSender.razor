@@ -5,6 +5,7 @@
 @inject ServiceBusService Bus
 @inject SettingsService SettingsService
 @inject PlaceholderService PlaceholderService
+@inject IJSRuntime JSRuntime
 
 <div>
     <div class="flex items-center justify-between mb-3">
@@ -380,7 +381,7 @@
         if (_editor != null)
         {
             var model = await _editor.GetModel();
-            await Global.SetModelLanguage(model, GetMonacoLanguage(_contentType));
+            await Global.SetModelLanguage(JSRuntime, model, GetMonacoLanguage(_contentType));
         }
     }
 
@@ -437,11 +438,11 @@
 
             var appProps = _appProperties
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-                .ToDictionary(k => k.Key, v => (object?)PlaceholderService.ProcessPlaceholders(v.Value));
+                .ToDictionary(k => k.Key, v => (object)PlaceholderService.ProcessPlaceholders(v.Value));
             
             var brokerProps = _brokerProperties
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-                .ToDictionary(k => k.Key, v => (object?)PlaceholderService.ProcessPlaceholders(v.Value));
+                .ToDictionary(k => k.Key, v => (object)PlaceholderService.ProcessPlaceholders(v.Value));
 
             if (!string.IsNullOrWhiteSpace(ct)) brokerProps["ContentType"] = ct;
 

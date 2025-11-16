@@ -228,7 +228,6 @@
     private string _selectedEntity = string.Empty;
     private string _selectedDisplayName = string.Empty;
     private string _selectedEntityType = string.Empty;
-    private bool _isDlqSelected = false;
 
     private string _sendBody = string.Empty;
     private string _sendResult = string.Empty;
@@ -308,7 +307,6 @@
         _selectedEntity = e.Name;
         _selectedDisplayName = e.DisplayName;
         _selectedEntityType = e.EntityType;
-        _isDlqSelected = false;
         _sendResult = string.Empty;
         
         // Auto-switch tabs based on entity type

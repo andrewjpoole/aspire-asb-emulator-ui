@@ -943,9 +943,9 @@
             ContentType = sourceMessage.ContentType,
             Body = sourceMessage.Body,
             ApplicationProperties = sourceMessage.ApplicationProperties?
-                .ToDictionary(kv => kv.Key, kv => kv.Value),
+                .ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<string, object>(),
             BrokerProperties = sourceMessage.BrokerProperties?
-                .ToDictionary(kv => kv.Key, kv => kv.Value)
+                .ToDictionary(kv => kv.Key, kv => kv.Value) ?? new Dictionary<string, object>()
         };
         
         // Add the duplicated message
