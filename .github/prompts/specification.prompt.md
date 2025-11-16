@@ -10,6 +10,6 @@ TODO
 * Aspire resource and hosting package
 * Extension method to override settings.json in the Aspire AppHost
 * API for sending canned messages during integration tests?
-* monaco editing mode for settings.json
-* 'Save as canned message' button in MessageSender and MessageReader
-* how to display forwarding queues??
+* search entities as you type - remove the filter button, add a clear button
+* editable entity name on canned messages in settings
+* improve import and export UI in settings, filepicker and file download and open in new tab etc

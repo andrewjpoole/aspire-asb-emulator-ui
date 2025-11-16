@@ -12,13 +12,23 @@ var serviceBus = builder
 serviceBus.AddServiceBusQueue("queue-one");
 serviceBus.AddServiceBusQueue("queue-two");
 serviceBus.AddServiceBusQueue("queue-three");
-serviceBus.AddServiceBusQueue("queue-four");
-serviceBus.AddServiceBusQueue("queue-five");
+serviceBus.AddServiceBusQueue("topic-sub1-fwd");
 serviceBus.AddServiceBusTopic("topic-one-with-a-very-very-very-very-very-very-very-long-name")
     .AddServiceBusSubscription("sub1-dummy-app");
 var topic2 = serviceBus.AddServiceBusTopic("topic-two");
 topic2.AddServiceBusSubscription("topic2-sub1-dummy-app");
 topic2.AddServiceBusSubscription("topic2-sub2-dummy-app");
+
+var topic = serviceBus.AddServiceBusTopic("topic");
+topic.AddServiceBusSubscription("sub1")
+     .WithProperties(subscription =>
+     {
+         subscription.MaxDeliveryCount = 10;
+         // CorrelationFilterRules supported but SqlFilters are not yet supported in Aspire.
+         // If SqlFilters are needed, supply the emulator config json file with the required filters.
+         subscription.ForwardTo = "topic-sub1-fwd";
+     });
+
 
 var apiService = builder.AddProject<AspireAsbEmulatorUi_App>("asb-ui")
     .WithReference(serviceBus)

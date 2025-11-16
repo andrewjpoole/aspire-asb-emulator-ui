@@ -2,6 +2,7 @@
 @using AspireAsbEmulatorUi.App.Models
 @using System.Text.Json
 @inject ServiceBusService Bus
+@inject SettingsService SettingsService
 @inject IJSRuntime JS
 
 <div>
@@ -54,6 +55,7 @@
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleBroker(m)" title="Show Broker Props">Broker</button>
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleApp(m)" title="Show Application Props">Application</button>
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => CopyMessage(m)" title="Copy message to clipboard">Copy</button>
+                            <button class="text-sm px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick:stopPropagation="true" @onclick="() => SaveMessageAsCanned(m)" title="Save as canned message">Save as Canned</button>
                         </div>
                     </div>
 
@@ -92,6 +94,39 @@
     </div>
 </div>
 
+@if (_showSaveDialog)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @onclick="() => _showSaveDialog = false">
+        <div class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4" @onclick:stopPropagation="true">
+            <h4 class="text-lg font-semibold mb-4">Save as Canned Message</h4>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Entity Name</label>
+                    <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                           @bind="_cannedEntityName" 
+                           placeholder="e.g., myqueue or mytopic" />
+                </div>
+                <div>
+                    <label class="text-sm text-slate-400 block mb-1">Scenario Name</label>
+                    <input class="w-full bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                           @bind="_cannedScenarioName" 
+                           placeholder="e.g., test scenario" />
+                </div>
+                @if (!string.IsNullOrEmpty(_saveResult))
+                {
+                    <div class="text-sm @(_saveResultSuccess ? "text-green-400" : "text-red-400")">
+                        @_saveResult
+                    </div>
+                }
+                <div class="flex gap-2 mt-4">
+                    <button class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="SaveCannedMessage">Save</button>
+                    <button class="px-4 py-2 rounded bg-slate-600 text-white hover:bg-slate-500" @onclick="() => { _showSaveDialog = false; _saveResult = string.Empty; }">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code{
     [Parameter] public string SelectedEntity { get; set; } = string.Empty;
     [Parameter] public string DisplayName { get; set; } = string.Empty;
@@ -103,6 +138,13 @@
 
     private HashSet<long> _showBroker = new();
     private HashSet<long> _showApp = new();
+
+    private bool _showSaveDialog = false;
+    private string _cannedEntityName = string.Empty;
+    private string _cannedScenarioName = string.Empty;
+    private string _saveResult = string.Empty;
+    private bool _saveResultSuccess = false;
+    private DisplayedMessage? _messageToSave = null;
 
     protected override void OnParametersSet()
     {
@@ -181,5 +223,91 @@
         sb.AppendLine(m.Body);
 
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+    }
+
+    private void SaveMessageAsCanned(DisplayedMessage m)
+    {
+        _messageToSave = m;
+        _cannedEntityName = SelectedEntity;
+        _cannedScenarioName = string.Empty;
+        _saveResult = string.Empty;
+        _saveResultSuccess = false;
+        _showSaveDialog = true;
+    }
+
+    private void SaveCannedMessage()
+    {
+        if (_messageToSave == null)
+        {
+            _saveResult = "No message to save";
+            _saveResultSuccess = false;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_cannedEntityName) || string.IsNullOrWhiteSpace(_cannedScenarioName))
+        {
+            _saveResult = "Please provide both entity and scenario names";
+            _saveResultSuccess = false;
+            return;
+        }
+
+        try
+        {
+            var settings = SettingsService.GetSettings();
+            
+            // Ensure entity exists in canned messages
+            if (!settings.CannedMessages.ContainsKey(_cannedEntityName))
+            {
+                settings.CannedMessages[_cannedEntityName] = new Dictionary<string, CannedMessage>();
+            }
+
+            // Extract broker properties (excluding null values and system-generated ones)
+            var brokerProps = new Dictionary<string, object>();
+            foreach (var kv in _messageToSave.BrokerProperties.Where(kv => kv.Value != null))
+            {
+                var key = kv.Key;
+                // Skip system-generated properties that shouldn't be in canned messages
+                if (key == "SequenceNumber" || key == "EnqueuedSequenceNumber" || 
+                    key == "EnqueuedTime" || key == "LockToken" || key == "LockedUntil" || 
+                    key == "State" || key == "DeliveryCount" || key == "ExpiresAt")
+                    continue;
+                
+                brokerProps[key] = kv.Value;
+            }
+
+            // Create the canned message
+            var cannedMessage = new CannedMessage
+            {
+                ContentType = _messageToSave.ContentType ?? "application/json",
+                Body = _messageToSave.Body,
+                ApplicationProperties = _messageToSave.ApplicationProperties
+                    .Where(p => p.Value != null)
+                    .ToDictionary(p => p.Key, p => p.Value!),
+                BrokerProperties = brokerProps
+            };
+
+            settings.CannedMessages[_cannedEntityName][_cannedScenarioName] = cannedMessage;
+            SettingsService.UpdateSettings(settings);
+
+            _saveResult = $"Saved as: {_cannedEntityName}/{_cannedScenarioName}";
+            _saveResultSuccess = true;
+            
+            // Close dialog after short delay
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1500);
+                await InvokeAsync(() =>
+                {
+                    _showSaveDialog = false;
+                    _saveResult = string.Empty;
+                    StateHasChanged();
+                });
+            });
+        }
+        catch (Exception ex)
+        {
+            _saveResult = $"Error: {ex.Message}";
+            _saveResultSuccess = false;
+        }
     }
 }
