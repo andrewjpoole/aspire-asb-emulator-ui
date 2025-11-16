@@ -261,30 +261,43 @@
                 settings.CannedMessages[_cannedEntityName] = new Dictionary<string, CannedMessage>();
             }
 
-            // Extract broker properties (excluding null values and system-generated ones)
+            // Extract broker properties (excluding null values, default values, and system-generated ones)
             var brokerProps = new Dictionary<string, object>();
             foreach (var kv in _messageToSave.BrokerProperties.Where(kv => kv.Value != null))
             {
                 var key = kv.Key;
+                var value = kv.Value!; // We know it's not null from the Where clause
+                
                 // Skip system-generated properties that shouldn't be in canned messages
                 if (key == "SequenceNumber" || key == "EnqueuedSequenceNumber" || 
                     key == "EnqueuedTime" || key == "LockToken" || key == "LockedUntil" || 
                     key == "State" || key == "DeliveryCount" || key == "ExpiresAt")
                     continue;
                 
-                brokerProps[key] = kv.Value;
+                // Skip properties with default values
+                if (IsDefaultValue(value))
+                    continue;
+                
+                brokerProps[key] = value;
             }
 
-            // Create the canned message
+            // Filter application properties to only include non-null and non-default values
+            var appProps = _messageToSave.ApplicationProperties
+                .Where(p => p.Value != null && !IsDefaultValue(p.Value))
+                .ToDictionary(p => p.Key, p => p.Value!);
+
+            // Create the canned message (only include properties dictionaries if they have values)
             var cannedMessage = new CannedMessage
             {
                 ContentType = _messageToSave.ContentType ?? "application/json",
-                Body = _messageToSave.Body,
-                ApplicationProperties = _messageToSave.ApplicationProperties
-                    .Where(p => p.Value != null)
-                    .ToDictionary(p => p.Key, p => p.Value!),
-                BrokerProperties = brokerProps
+                Body = _messageToSave.Body
             };
+
+            if (appProps.Any())
+                cannedMessage.ApplicationProperties = appProps;
+            
+            if (brokerProps.Any())
+                cannedMessage.BrokerProperties = brokerProps;
 
             settings.CannedMessages[_cannedEntityName][_cannedScenarioName] = cannedMessage;
             SettingsService.UpdateSettings(settings);
@@ -308,6 +321,51 @@
         {
             _saveResult = $"Error: {ex.Message}";
             _saveResultSuccess = false;
+        }
+    }
+
+    private bool IsDefaultValue(object value)
+    {
+        if (value == null)
+            return true;
+
+        var type = value.GetType();
+
+        // Check for default values of common types
+        if (type == typeof(string))
+            return string.IsNullOrEmpty((string)value);
+        
+        if (type == typeof(int))
+            return (int)value == 0;
+        
+        if (type == typeof(long))
+            return (long)value == 0;
+        
+        if (type == typeof(bool))
+            return (bool)value == false;
+        
+        if (type == typeof(DateTime))
+            return (DateTime)value == default(DateTime);
+        
+        if (type == typeof(DateTimeOffset))
+            return (DateTimeOffset)value == default(DateTimeOffset);
+        
+        if (type == typeof(TimeSpan))
+            return (TimeSpan)value == default(TimeSpan);
+        
+        if (type == typeof(Guid))
+            return (Guid)value == default(Guid);
+
+        // For other types, check if it equals the default value
+        try
+        {
+            var defaultValue = Activator.CreateInstance(type);
+            return value.Equals(defaultValue);
+        }
+        catch
+        {
+            // If we can't determine, assume it's not default
+            return false;
         }
     }
 }
