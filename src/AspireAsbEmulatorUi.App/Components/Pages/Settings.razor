@@ -89,13 +89,39 @@
         <!-- Canned Messages Card -->
         <div class="bg-slate-800 rounded p-6">
             <h2 class="text-xl font-semibold mb-4">Canned Messages</h2>
+            <div class="mb-4 p-3 rounded bg-blue-900 text-blue-100 text-sm">
+                <strong>Tip:</strong> Use entity names like "all", "any", or "*" to create canned messages that appear for any entity in the Message Sender.
+            </div>
             <div class="space-y-4">
                 @foreach (var entity in _settings.CannedMessages)
                 {
                     <div class="bg-slate-700 rounded p-4">
                         <div class="flex items-center justify-between mb-3">
-                            <h4 class="font-semibold">Entity: @entity.Key</h4>
-                            <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="() => RemoveEntity(entity.Key)">Remove Entity</button>
+                            @if (_editingEntityName == entity.Key)
+                            {
+                                <div class="flex items-center gap-2 flex-1">
+                                    <span class="text-sm text-slate-400">Entity:</span>
+                                    <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                                           @bind="_newEntityNameValue" 
+                                           placeholder="Entity name" />
+                                    <button class="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm" @onclick="() => SaveEntityNameEdit(entity.Key)">Save</button>
+                                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="CancelEntityNameEdit">Cancel</button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="flex items-center gap-2">
+                                    <h4 class="font-semibold">Entity: @entity.Key</h4>
+                                    @if (IsWildcardEntity(entity.Key))
+                                    {
+                                        <span class="px-2 py-0.5 rounded bg-purple-600 text-purple-100 text-xs">Wildcard - shows for all entities</span>
+                                    }
+                                </div>
+                                <div class="flex gap-2">
+                                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="() => StartEditingEntityName(entity.Key)">Rename</button>
+                                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="() => RemoveEntity(entity.Key)">Remove Entity</button>
+                                </div>
+                            }
                         </div>
                         
                         @foreach (var scenario in entity.Value)
@@ -664,5 +690,108 @@
             "text/plain" => "plaintext",
             _ => "plaintext",
         };
+    }
+
+    // Entity name editing fields
+    private string? _editingEntityName = null;
+    private string _newEntityNameValue = string.Empty;
+
+    // Check if entity name is a wildcard
+    private bool IsWildcardEntity(string entityName)
+    {
+        return entityName.Equals("all", StringComparison.OrdinalIgnoreCase) ||
+               entityName.Equals("any", StringComparison.OrdinalIgnoreCase) ||
+               entityName == "*";
+    }
+
+    // Start editing an entity name
+    private void StartEditingEntityName(string entityName)
+    {
+        _editingEntityName = entityName;
+        _newEntityNameValue = entityName;
+        StateHasChanged();
+    }
+
+    // Cancel editing entity name
+    private void CancelEntityNameEdit()
+    {
+        _editingEntityName = null;
+        _newEntityNameValue = string.Empty;
+        StateHasChanged();
+    }
+
+    // Save the edited entity name
+    private void SaveEntityNameEdit(string oldEntityName)
+    {
+        if (string.IsNullOrWhiteSpace(_newEntityNameValue))
+        {
+            _message = "Entity name cannot be empty";
+            _editingEntityName = null;
+            StateHasChanged();
+            return;
+        }
+
+        if (_newEntityNameValue == oldEntityName)
+        {
+            CancelEntityNameEdit();
+            return;
+        }
+
+        if (_settings.CannedMessages.ContainsKey(_newEntityNameValue))
+        {
+            _message = $"Entity '{_newEntityNameValue}' already exists";
+            StateHasChanged();
+            return;
+        }
+
+        if (_settings.CannedMessages.TryGetValue(oldEntityName, out var scenarios))
+        {
+            _settings.CannedMessages.Remove(oldEntityName);
+            _settings.CannedMessages[_newEntityNameValue] = scenarios;
+            
+            if (_newScenarioNames.ContainsKey(oldEntityName))
+            {
+                var value = _newScenarioNames[oldEntityName];
+                _newScenarioNames.Remove(oldEntityName);
+                _newScenarioNames[_newEntityNameValue] = value;
+            }
+            
+            var keysToRename = _appPropsLists.Keys.Where(k => k.StartsWith($"{oldEntityName}:")).ToList();
+            foreach (var oldKey in keysToRename)
+            {
+                var scenarioName = oldKey.Substring(oldEntityName.Length + 1);
+                var newKey = $"{_newEntityNameValue}:{scenarioName}";
+                
+                if (_appPropsLists.ContainsKey(oldKey))
+                {
+                    _appPropsLists[newKey] = _appPropsLists[oldKey];
+                    _appPropsLists.Remove(oldKey);
+                }
+                
+                if (_brokerPropsLists.ContainsKey(oldKey))
+                {
+                    _brokerPropsLists[newKey] = _brokerPropsLists[oldKey];
+                    _brokerPropsLists.Remove(oldKey);
+                }
+                
+                if (_bodyEditors.ContainsKey(oldKey))
+                {
+                    _bodyEditors[newKey] = _bodyEditors[oldKey];
+                    _bodyEditors.Remove(oldKey);
+                }
+                
+                if (_expandedScenarios.Contains(oldKey))
+                {
+                    _expandedScenarios.Remove(oldKey);
+                    _expandedScenarios.Add(newKey);
+                }
+            }
+            
+            _message = $"Renamed entity from '{oldEntityName}' to '{_newEntityNameValue}'";
+        }
+        
+        _editingEntityName = null;
+        _newEntityNameValue = string.Empty;
+        StateHasChanged();
     }
 }

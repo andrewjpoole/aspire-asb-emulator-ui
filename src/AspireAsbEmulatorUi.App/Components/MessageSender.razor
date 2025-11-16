@@ -137,6 +137,7 @@
     private string _selectedCannedMessage = string.Empty;
     private List<string> _cannedMessages = new();
     private string? _matchedEntityKey = null;
+    private Dictionary<string, string> _scenarioToEntityMap = new();
 
     protected override void OnParametersSet()
     {
@@ -148,41 +149,98 @@
         _cannedMessages.Clear();
         _selectedCannedMessage = string.Empty;
         _matchedEntityKey = null;
+        _scenarioToEntityMap.Clear();
 
         if (string.IsNullOrWhiteSpace(SelectedEntity))
             return;
 
         var settings = SettingsService.GetSettings();
+        var allScenarios = new Dictionary<string, string>(); // scenarioName -> entityKey
         
-        // Try exact match first
+        // First, check for wildcard entities ("all", "any", "*")
+        var wildcardEntities = settings.CannedMessages.Keys
+            .Where(k => k.Equals("all", StringComparison.OrdinalIgnoreCase) ||
+                       k.Equals("any", StringComparison.OrdinalIgnoreCase) ||
+                       k == "*")
+            .ToList();
+        
+        foreach (var wildcardKey in wildcardEntities)
+        {
+            if (settings.CannedMessages.TryGetValue(wildcardKey, out var wildcardScenarios))
+            {
+                foreach (var scenario in wildcardScenarios.Keys)
+                {
+                    // Add with wildcard prefix to distinguish from entity-specific scenarios
+                    var displayName = $"{scenario} (wildcard)";
+                    allScenarios[displayName] = wildcardKey;
+                }
+            }
+        }
+        
+        // Try exact match for entity-specific scenarios
         if (settings.CannedMessages.TryGetValue(SelectedEntity, out var scenarios))
         {
             _matchedEntityKey = SelectedEntity;
-            _cannedMessages = scenarios.Keys.OrderBy(k => k).ToList();
-            return;
+            foreach (var scenario in scenarios.Keys)
+            {
+                allScenarios[scenario] = SelectedEntity;
+            }
         }
-        
-        // Try case-insensitive match
-        var matchingKey = settings.CannedMessages.Keys
-            .FirstOrDefault(k => string.Equals(k, SelectedEntity, StringComparison.OrdinalIgnoreCase));
-        
-        if (matchingKey != null && settings.CannedMessages.TryGetValue(matchingKey, out var scenariosInsensitive))
+        else
         {
-            _matchedEntityKey = matchingKey;
-            _cannedMessages = scenariosInsensitive.Keys.OrderBy(k => k).ToList();
+            // Try case-insensitive match
+            var matchingKey = settings.CannedMessages.Keys
+                .FirstOrDefault(k => string.Equals(k, SelectedEntity, StringComparison.OrdinalIgnoreCase));
+            
+            if (matchingKey != null && settings.CannedMessages.TryGetValue(matchingKey, out var scenariosInsensitive))
+            {
+                _matchedEntityKey = matchingKey;
+                foreach (var scenario in scenariosInsensitive.Keys)
+                {
+                    allScenarios[scenario] = matchingKey;
+                }
+            }
         }
+        
+        // Populate the canned messages list (sorted, with entity-specific first, then wildcards)
+        _cannedMessages = allScenarios.Keys
+            .OrderBy(k => k.Contains("(wildcard)"))
+            .ThenBy(k => k)
+            .ToList();
+        
+        // Store the mapping for later retrieval
+        _scenarioToEntityMap = allScenarios;
     }
 
     private async Task LoadCannedMessage()
     {
-        if (string.IsNullOrWhiteSpace(_selectedCannedMessage) || string.IsNullOrWhiteSpace(_matchedEntityKey))
+        if (string.IsNullOrWhiteSpace(_selectedCannedMessage))
             return;
 
         try
         {
+            // Determine the entity key and actual scenario name
+            string entityKey;
+            string actualScenarioName;
+            
+            if (_scenarioToEntityMap.TryGetValue(_selectedCannedMessage, out var mappedEntityKey))
+            {
+                entityKey = mappedEntityKey;
+                // Remove the " (wildcard)" suffix if present
+                actualScenarioName = _selectedCannedMessage.Replace(" (wildcard)", "");
+            }
+            else
+            {
+                // Fallback to original behavior
+                if (string.IsNullOrWhiteSpace(_matchedEntityKey))
+                    return;
+                entityKey = _matchedEntityKey;
+                actualScenarioName = _selectedCannedMessage;
+            }
+
             var settings = SettingsService.GetSettings();
-            if (settings.CannedMessages.TryGetValue(_matchedEntityKey, out var scenarios) &&
-                scenarios.TryGetValue(_selectedCannedMessage, out var cannedMsg) &&
+            if (settings.CannedMessages.TryGetValue(entityKey, out var scenarios) &&
+                scenarios.TryGetValue(actualScenarioName, out var cannedMsg) &&
                 cannedMsg != null)
             {
                 // Set content type
@@ -224,7 +282,7 @@
                     }
                 }
 
-                _result = $"Loaded canned message: {_selectedCannedMessage}";
+                _result = $"Loaded canned message: {actualScenarioName} (from {entityKey})";
                 StateHasChanged();
             }
         }
