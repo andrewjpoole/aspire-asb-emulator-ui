@@ -11,13 +11,13 @@
 
     <div class="flex items-center gap-3 mb-3">
         <div class="flex rounded bg-slate-700 p-1">
-            <button class=@($"px-3 py-1 rounded-l text-sm {(_isDlqSelected ? "text-slate-400" : "bg-blue-600 text-white")}") @onclick="() => SelectDlq(false)">Main</button>
-            <button class=@($"px-3 py-1 rounded-r text-sm {(_isDlqSelected ? "bg-blue-600 text-white" : "text-slate-400")}") @onclick="() => SelectDlq(true)">Dead-letter</button>
+            <button class=@($"px-3 py-1 rounded-l text-sm {(_isDlqSelected ? "text-slate-400" : "bg-slate-600 text-white")}") @onclick="() => SelectDlq(false)">Main</button>
+            <button class=@($"px-3 py-1 rounded-r text-sm {(_isDlqSelected ? "bg-slate-600 text-white" : "text-slate-400")}") @onclick="() => SelectDlq(true)">Dead-letter</button>
         </div>
 
         <!-- Peek/Receive toggle -->
         <div class="flex rounded bg-slate-700 p-1">
-            <button class=@($"px-3 py-1 rounded-l text-sm {(!_isReceive ? "bg-blue-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(false)">Peek</button>
+            <button class=@($"px-3 py-1 rounded-l text-sm {(!_isReceive ? "bg-slate-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(false)">Peek</button>
             <button class=@($"px-3 py-1 rounded-r text-sm {(_isReceive ? "bg-red-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(true)">Receive</button>
         </div>
 
@@ -58,9 +58,9 @@
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => CopyMessage(m)" title="Copy message to clipboard">Copy</button>
                             @if (!_isReceive && !_isDlqSelected)
                             {
-                                <button class="text-sm px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700" @onclick:stopPropagation="true" @onclick="() => DeadLetterMessage(m)" title="Move message to dead-letter queue">Dead-letter</button>
+                                <button class="text-sm px-2 py-1 rounded bg-slate-600 text-white hover:bg-red-700" @onclick:stopPropagation="true" @onclick="() => DeadLetterMessage(m)" title="Move message to dead-letter queue">Dead-letter</button>
                             }
-                            <button class="text-sm px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick:stopPropagation="true" @onclick="() => SaveMessageAsCanned(m)" title="Save as canned message">Save as Canned</button>
+                            <button class="text-sm px-2 py-1 rounded bg-slate-600 text-white hover:bg-blue-700" @onclick:stopPropagation="true" @onclick="() => SaveMessageAsCanned(m)" title="Save as canned message">Save as Canned</button>
                         </div>
                     </div>
 
@@ -198,6 +198,13 @@
             {
                 var msgs = await Bus.ReceiveMessagesAsync(target, _maxMessages);
                 _messages.AddRange(msgs);
+                
+                // If messages were received (deleted), notify parent to refresh entity counts
+                if (msgs.Any() && OnEntityChanged.HasDelegate)
+                {
+                    await Task.Delay(500); // Give the emulator a moment to update
+                    await OnEntityChanged.InvokeAsync();
+                }
             }
         }
         catch (Exception ex)

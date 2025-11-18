@@ -21,19 +21,24 @@
         </button>
     </div>
 
+
     @if (_cannedMessages.Any())
     {
-        <div class="mb-3">
-            <label class="text-sm text-slate-400 block mb-1">Load Canned Message</label>
-            <select @bind="_selectedCannedMessage" @bind:after="LoadCannedMessage" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-full">
-                <option value="">Select a canned message...</option>
-                @foreach (var scenario in _cannedMessages)
-                {
-                    <option value="@scenario">@scenario</option>
-                }
-            </select>
+        <div class="mb-3 flex items-center gap-4">
+            <div class="flex-1">
+                <label class="text-sm text-slate-400 block mb-1">Load Canned Message</label>
+                <select @bind="_selectedCannedMessage" @bind:after="LoadCannedMessage" class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1 rounded w-full">
+                    <option value="">Select a canned message...</option>
+                    @foreach (var scenario in _cannedMessages)
+                    {
+                        <option value="@scenario">@scenario</option>
+                    }
+                </select>
+            </div>
         </div>
     }
+
+    <!-- Send mode toggle moved to bottom near Send button to match requested layout -->
 
     <label class="text-sm text-slate-400 block mb-1">Content type</label>
     <div class="mb-3">
@@ -68,14 +73,32 @@
             OnPropertiesChanged="StateHasChanged" />
     </div>
 
-    <div class="mt-6 pt-4 border-t border-slate-700 flex gap-2">
-        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ConfirmAndSend">Send Message</button>
-        <button class="px-3 py-1 rounded bg-slate-600 text-white hover:bg-slate-700" @onclick="SaveAsCannedMessage">Save as Canned Message</button>
-        @if (!string.IsNullOrEmpty(_result))
-        {
-            <div class="text-sm text-slate-400 mt-2">@_result</div>
-        }
+    <div class="mt-6 pt-4 border-t border-slate-700 flex items-center gap-2">
+        <div class="flex rounded bg-slate-700 p-1">
+            <button class=@($"px-3 py-1 rounded-l text-sm {(!_sendMultiple ? "bg-slate-600 text-white" : "text-slate-200")}") type="button" @onclick="() => _sendMultiple = false">Single</button>
+            <button class=@($"px-3 py-1 rounded-r text-sm {(_sendMultiple ? "bg-slate-600 text-white" : "text-slate-200")}") type="button" @onclick="() => _sendMultiple = true">Multiple</button>
+            @if (_sendMultiple)
+            {
+                <div class="flex items-end" title="Number of messages to send">
+                    <div>                    
+                        <input type="number" min="1" max="1000" style="width:80px" class="bg-slate-800 text-slate-100 px-2 py-1 rounded" @bind="_messageCount" />
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="flex-1"></div>
+
+        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="ConfirmAndSend">@(_sendMultiple ? "Send Messages" : "Send Message")</button>
+        <button class="px-3 py-1 rounded bg-slate-600 text-white hover:bg-slate-700" @onclick="SaveAsCannedMessage">Save as Canned</button>
     </div>
+
+    @if (!string.IsNullOrEmpty(_result))
+    {
+        <div class="mt-4 p-3 rounded bg-slate-700 border border-slate-600 text-sm text-slate-200">
+            @_result
+        </div>
+    }
 
     @if (_confirmEmpty)
     {
@@ -117,9 +140,13 @@
 @code{
     [Parameter] public string SelectedEntity { get; set; } = string.Empty;
     [Parameter] public string DisplayName { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnEntityChanged { get; set; }
 
     private StandaloneCodeEditor? _editor;
     private string _body = string.Empty;
+
+    private int _messageCount = 10;
+    private bool _sendMultiple = false;
     private string _result = string.Empty;
 
     private string _contentType = "application/json";
@@ -445,19 +472,21 @@
 
             if (!string.IsNullOrWhiteSpace(ct)) brokerProps["ContentType"] = ct;
 
-            await Bus.SendMessageAsync(SelectedEntity, processedBody, appProps, brokerProps);
-            _result = $"Sent at {DateTime.Now:HH:mm:ss}";
-            
-            // Clear the editor and properties
-            if (_editor != null)
+            int count = _sendMultiple ? Math.Max(1, _messageCount) : 1;
+            for (int i = 0; i < count; i++)
             {
-                await _editor.SetValue(string.Empty);
+                await Bus.SendMessageAsync(SelectedEntity, processedBody, appProps, brokerProps);
             }
-            _body = string.Empty;
-            
-            // Clear property lists
-            _appProperties.Clear();
-            _brokerProperties.Clear();
+            _result = $"Sent {count} message{(count > 1 ? "s" : "")} at {DateTime.Now:HH:mm:ss}";
+
+            // Keep the canned selection, editor body, and properties so the user can resend if desired.
+
+            // Notify parent to refresh entity counts (give emulator a moment)
+            if (OnEntityChanged.HasDelegate)
+            {
+                await Task.Delay(500);
+                await OnEntityChanged.InvokeAsync();
+            }
         }
         catch (Exception ex)
         {

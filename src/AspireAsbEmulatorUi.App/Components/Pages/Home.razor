@@ -42,34 +42,32 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <span class="text-sm text-slate-300 font-medium">Refresh</span>
-                        <div class="flex rounded bg-slate-700 p-1">
+                        <div class="flex rounded bg-slate-700 p-1 items-center">
                             <button class=@($"px-3 py-1 rounded-l text-sm {(_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Auto refresh every 2 seconds for 5 minutes." @onclick="async () => await SetAutoRefresh(true)">Auto</button>
-                            <button class=@($"px-3 py-1 rounded-r text-sm {(!_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Disable Auto refresh" @onclick="async () => await SetAutoRefresh(false)">Manual</button>
-                        </div>
-
-                        <button title="Refresh Entities now!" class=@($"px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 {(_autoRefreshEnabled ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700")}") @onclick="Refresh" disabled="@_autoRefreshEnabled">
-                            @if (_loading)
+                            <button class=@($"px-3 py-1 text-sm {(!_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Disable Auto refresh" @onclick="async () => await SetAutoRefresh(false)">Manual</button>
+                            @if (!_autoRefreshEnabled)
                             {
-                                <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
+                                <button title="Refresh Entities now!" class="ml-2 px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 hover:bg-blue-700" @onclick="Refresh">
+                                    <span class="text-sm">Now!</span>
+                                </button>
                             }
-                            <span class="text-sm">Now!</span>
-                        </button>
+                        </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        @if (_loading)
-                        {
-                            <span class="text-xs text-blue-400 flex items-center gap-1">
-                                <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <div class="text-xs text-slate-400 flex items-center gap-1" title="Last refresh time">
+                            @if (_loading)
+                            {
+                                <svg class="animate-spin h-3 w-3 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                Refreshing...
-                            </span>
-                        }
-                        <div class="text-xs text-slate-400" title="Last refresh time">@@ @(_lastRefreshed.HasValue ? _lastRefreshed.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Never")</div>
+                                <span class="text-blue-400">Refreshing...</span>
+                            }
+                            else
+                            {
+                                <span>@@ @(_lastRefreshed.HasValue ? _lastRefreshed.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Never")</span>
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
@@ -216,7 +214,7 @@
                 <div class="p-3 border-b border-slate-700 bg-slate-850">
                     <nav class="flex gap-2">
                         <button 
-                            class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "viewer" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-200 hover:bg-slate-600")}") 
+                            class=@($"px-4 py-2 rounded font-semibold transition-colors border {(_activeTab == "viewer" ? "border-2 border-blue-500 bg-slate-700 text-white shadow-md" : "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700")}")
                             @onclick="ShowViewer">
                             <span class="flex items-center gap-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -227,7 +225,7 @@
                             </span>
                         </button>
                         <button 
-                            class=@($"px-4 py-2 rounded font-medium transition-colors {(_activeTab == "sender" ? "bg-blue-600 text-white" : (_selectedEntityType == "Subscription" ? "bg-slate-800 text-slate-500 cursor-not-allowed" : "bg-slate-700 text-slate-200 hover:bg-slate-600"))}")
+                            class=@($"px-4 py-2 rounded font-semibold transition-colors border {(_activeTab == "sender" ? "border-2 border-blue-500 bg-slate-700 text-white shadow-md" : (_selectedEntityType == "Subscription" ? "border border-slate-700 bg-slate-800 text-slate-500 cursor-not-allowed" : "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"))}")
                             @onclick="ShowSender"
                             disabled="@(_selectedEntityType == "Subscription")"
                             title="@(_selectedEntityType == "Subscription" ? "Cannot send to subscriptions - send to the parent topic instead" : "")">
@@ -254,7 +252,7 @@
                     }
                     else if (_activeTab == "sender")
                     {
-                        <MessageSender SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" />
+                        <MessageSender SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" OnEntityChanged="RefreshEntities" />
                     }
                 </div>
             }
