@@ -63,6 +63,9 @@ class MessageProcessor : BackgroundService
 
         try
         {
+            // simulate some processing delay
+            await Task.Delay(Random.Shared.Next(500, 5000));
+
             // Check for the "DeadLetter" application property
             if (message.ApplicationProperties.TryGetValue("DeadLetter", out var deadLetterValue) &&
                 (deadLetterValue is bool shouldDeadLetter && shouldDeadLetter || 

@@ -16,13 +16,46 @@
         </div>
 
         <!-- Peek/Receive toggle -->
-        <div class="flex rounded bg-slate-700 p-1">
+        <div class="flex rounded bg-slate-700 p-1 items-center">
             <button class=@($"px-3 py-1 rounded-l text-sm {(!_isReceive ? "bg-slate-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(false)">Peek</button>
             <button class=@($"px-3 py-1 rounded-r text-sm {(_isReceive ? "bg-red-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(true)">Receive</button>
+
+            @* Watch checkbox visible only in Peek mode *@
+            <!-- watch toggle moved next to Load button -->
         </div>
 
         <input type="number" min="1" max="100" @bind="_maxMessages" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" />
-        <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="LoadMessages">Load</button>
+        @if (!_watchEnabled)
+        {
+            <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2" @onclick="LoadMessages">
+                <span>Load</span>
+            </button>
+        }
+        @if (!_isReceive)
+        {
+            <div class="ml-3 flex items-center text-sm text-slate-200">
+                <label class="inline-flex items-center cursor-pointer" title="Auto load every 3 seconds for 5 minutes">
+                    <input type="checkbox" class="sr-only peer" @bind="WatchToggle" />
+                    <div class="relative w-9 h-5 bg-neutral-quaternary border-2 border-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-soft rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-buffer after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
+                    <span class="select-none ms-3 text-sm font-medium text-heading">Watch</span>
+                </label>
+            </div>
+        }
+
+        <div class="ml-3 text-xs text-slate-400 flex items-center gap-1" title="Last messages load time">
+            @if (_loadingMessages)
+            {
+                <svg class="animate-spin h-3 w-3 text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-blue-400">Refreshing...</span>
+            }
+            else
+            {
+                <span>@(_lastMessagesRefreshed.HasValue ? _lastMessagesRefreshed.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Never")</span>
+            }
+        </div>
     </div>
 
     @if (_isReceive)
@@ -141,6 +174,10 @@
     private List<DisplayedMessage>? _messages;
     private bool _isDlqSelected = false;
     private bool _isReceive = false; // false = peek, true = receive
+    private bool _watchEnabled = false;
+    private System.Threading.Timer? _watchTimer;
+    private bool _loadingMessages = false;
+    private DateTime? _lastMessagesRefreshed;
 
     private HashSet<long> _showBroker = new();
     private HashSet<long> _showApp = new();
@@ -168,6 +205,67 @@
     {
         _isReceive = receive;
         _messages = null;
+        // Disable watch when switching into receive (watch only valid for peek)
+        if (_isReceive)
+        {
+            StopWatch();
+        }
+    }
+
+    private void SetWatch(bool enabled)
+    {
+        _watchEnabled = enabled;
+        if (_watchEnabled)
+        {
+            StartWatch();
+        }
+        else
+        {
+            StopWatch();
+        }
+    }
+
+    private bool WatchToggle
+    {
+        get => _watchEnabled;
+        set
+        {
+            if (value == _watchEnabled) return;
+            SetWatch(value);
+        }
+    }
+
+    private void StartWatch()
+    {
+        _watchTimer?.Dispose();
+        var end = DateTime.UtcNow + TimeSpan.FromMinutes(5);
+        _watchTimer = new System.Threading.Timer(async _ =>
+        {
+            if (DateTime.UtcNow >= end || _isReceive)
+            {
+                StopWatch();
+                return;
+            }
+
+            try
+            {
+                await InvokeAsync(async () => await LoadMessages());
+            }
+            catch { }
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(3));
+    }
+
+    private void StopWatch()
+    {
+        _watchTimer?.Dispose();
+        _watchTimer = null;
+        _watchEnabled = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _watchTimer?.Dispose();
     }
 
     private void ToggleBroker(DisplayedMessage m)
@@ -184,7 +282,16 @@
 
     private async Task LoadMessages()
     {
-        if (string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        _loadingMessages = true;
+        await InvokeAsync(StateHasChanged);
+
+        if (string.IsNullOrWhiteSpace(SelectedEntity))
+        {
+            _loadingMessages = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         _messages = new List<DisplayedMessage>();
         try
         {
@@ -198,7 +305,7 @@
             {
                 var msgs = await Bus.ReceiveMessagesAsync(target, _maxMessages);
                 _messages.AddRange(msgs);
-                
+
                 // If messages were received (deleted), notify parent to refresh entity counts
                 if (msgs.Any() && OnEntityChanged.HasDelegate)
                 {
@@ -210,6 +317,12 @@
         catch (Exception ex)
         {
             _messages.Add(new DisplayedMessage { Body = $"Error: {ex.Message}" });
+        }
+        finally
+        {
+            _lastMessagesRefreshed = DateTime.Now;
+            _loadingMessages = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 

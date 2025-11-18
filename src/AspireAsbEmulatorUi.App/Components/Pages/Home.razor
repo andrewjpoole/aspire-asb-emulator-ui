@@ -41,17 +41,21 @@
 
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                        <span class="text-sm text-slate-300 font-medium">Refresh</span>
-                        <div class="flex rounded bg-slate-700 p-1 items-center">
-                            <button class=@($"px-3 py-1 rounded-l text-sm {(_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Auto refresh every 2 seconds for 5 minutes." @onclick="async () => await SetAutoRefresh(true)">Auto</button>
-                            <button class=@($"px-3 py-1 text-sm {(!_autoRefreshEnabled ? "bg-slate-600 text-white" : "text-slate-200 hover:bg-slate-600")}") title="Disable Auto refresh" @onclick="async () => await SetAutoRefresh(false)">Manual</button>
-                            @if (!_autoRefreshEnabled)
-                            {
-                                <button title="Refresh Entities now!" class="ml-2 px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 hover:bg-blue-700" @onclick="Refresh">
-                                    <span class="text-sm">Now!</span>
-                                </button>
-                            }
+                        <span class="text-sm text-slate-300 font-medium">Refresh</span>                        
+                        <div class="ml-3 flex items-center text-sm text-slate-200">
+                            <label class="inline-flex items-center cursor-pointer" title="Auto refresh every 3 seconds for 5 minutes">
+                                <span class="select-none me-3 text-sm font-medium text-heading">@(!_autoRefreshEnabled ? "Manual" : string.Empty)</span>
+                                <input type="checkbox" class="sr-only peer" @bind="AutoRefreshToggle" />
+                                <div class="relative w-9 h-5 bg-neutral-quaternary border-2 border-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-soft rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-buffer after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
+                                <span class="select-none ms-3 text-sm font-medium text-heading">@(_autoRefreshEnabled ? "Auto" : string.Empty)</span>
+                            </label>
                         </div>
+                        @if (!_autoRefreshEnabled)
+                        {
+                            <button title="Refresh Entities now!" class="ml-2 px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 hover:bg-blue-700" @onclick="Refresh">
+                                <span class="text-sm">Now!</span>
+                            </button>
+                        }
                     </div>
                     <div class="flex items-center gap-2">
                         <div class="text-xs text-slate-400 flex items-center gap-1" title="Last refresh time">
@@ -426,7 +430,7 @@
                     });
                 }
                 catch { }
-            }, null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+            }, null, TimeSpan.Zero, TimeSpan.FromSeconds(3));
         }
         else
         {
@@ -441,6 +445,16 @@
     {
         // forward to existing handler using a synthetic ChangeEventArgs
         return OnAutoRefreshChanged(new ChangeEventArgs { Value = enable });
+    }
+
+    private bool AutoRefreshToggle
+    {
+        get => _autoRefreshEnabled;
+        set
+        {
+            if (value == _autoRefreshEnabled) return;
+            _ = SetAutoRefresh(value);
+        }
     }
 
     public void Dispose()
