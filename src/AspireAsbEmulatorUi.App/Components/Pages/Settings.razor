@@ -1,5 +1,6 @@
 @page "/settings"
 @rendermode InteractiveServer
+@using AspireAsbEmulatorUi.Models
 @using AspireAsbEmulatorUi.App.Models
 @using AspireAsbEmulatorUi.App.Services
 @using System.Text.Json
@@ -304,7 +305,7 @@
 }
 
 @code {
-    private Models.Settings _settings = new();
+    private AspireAsbEmulatorUi.Models.Settings _settings = new();
     private string _message = string.Empty;
     
     private string _newContentType = string.Empty;

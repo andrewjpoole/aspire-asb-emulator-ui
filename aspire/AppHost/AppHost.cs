@@ -46,6 +46,11 @@ else
         }); 
 }
 
+// Add MessageHandler console app to process messages from queue-one
+builder.AddProject<Projects.MessageHandler>("message-handler")
+    .WithReference(serviceBus)
+    .WaitFor(serviceBus);
+
 
 
 builder.Build().Run();

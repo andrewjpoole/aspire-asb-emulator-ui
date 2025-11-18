@@ -13,41 +13,18 @@ public class ServiceBusEntityInfo
     {
         get
         {
-            if (string.IsNullOrWhiteSpace(Name)) return string.Empty;
-            var s = Name;
-            // Remove common namespace prefix
-            const string prefix = "SBEMULATORNS";
-            if (s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            // For subscriptions, show just the subscription name (after the pipe)
+            if (EntityType == "Subscription" && !string.IsNullOrEmpty(ParentTopic) && Name.Contains('|'))
             {
-                s = s.Substring(prefix.Length);
-            }
-            // Trim common separators
-            s = s.TrimStart('|', '/', '\\', ':', '.', '-', '_');
-
-            // If there's a type prefix like "QUEUE:" or "TOPIC:", remove it
-            var parts = s.Split(new[] { ':', '|' }, 2);
-            if (parts.Length == 2)
-            {
-                var first = parts[0].Trim();
-                if (first.Equals("QUEUE", StringComparison.OrdinalIgnoreCase) || first.Equals("TOPIC", StringComparison.OrdinalIgnoreCase))
+                var parts = Name.Split('|', 2);
+                if (parts.Length == 2)
                 {
-                    s = parts[1];
+                    return parts[1];
                 }
             }
 
-            // For subscriptions, extract just the subscription name (after the parent topic)
-            if (!string.IsNullOrEmpty(ParentTopic) && s.Contains('|'))
-            {
-                var subParts = s.Split('|', 2);
-                if (subParts.Length == 2)
-                {
-                    s = subParts[1];
-                }
-            }
-
-            // Finally trim any leading separators that may remain
-            s = s.TrimStart('|', '/', '\\', ':', '.', '-', '_');
-            return s;
+            // For queues and topics, Name is already clean
+            return Name;
         }
     }
 }

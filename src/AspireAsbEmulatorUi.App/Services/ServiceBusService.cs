@@ -244,15 +244,16 @@ public class ServiceBusService : IAsyncDisposable
         {
             var entities = await _repo.GetEntitiesAsync();
             
+            // Check if it ends with /$DeadLetterQueue and strip it for validation
+            var isDlq = cleanedEntityNameLower.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase);
+            var pathWithoutDlq = isDlq 
+                ? cleanedEntityNameLower.Substring(0, cleanedEntityNameLower.Length - "/$deadletterqueue".Length)
+                : cleanedEntityNameLower;
+            
             // Check if it's a subscription path (contains /subscriptions/)
-            if (cleanedEntityNameLower.Contains("/subscriptions/", StringComparison.OrdinalIgnoreCase))
+            if (pathWithoutDlq.Contains("/subscriptions/", StringComparison.OrdinalIgnoreCase))
             {
-                // Format: topic-name/subscriptions/sub-name or topic-name/subscriptions/sub-name/$DeadLetterQueue
-                var isDlq = cleanedEntityNameLower.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase);
-                var pathWithoutDlq = isDlq 
-                    ? cleanedEntityNameLower.Substring(0, cleanedEntityNameLower.Length - "/$deadletterqueue".Length)
-                    : cleanedEntityNameLower;
-                
+                // Format: topic-name/subscriptions/sub-name
                 var subParts = pathWithoutDlq.Split(new[] { "/subscriptions/" }, StringSplitOptions.None);
                 if (subParts.Length == 2)
                 {
@@ -275,11 +276,11 @@ public class ServiceBusService : IAsyncDisposable
                 return false;
             }
             
-            // For queues and topics, do simple name matching
+            // For queues and topics, do simple name matching (with DLQ suffix stripped)
             foreach (var e in entities)
             {
                 var candidate = CleanEntityNameForComparison(e.Name);
-                if (string.Equals(candidate, cleanedEntityNameLower, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(candidate, pathWithoutDlq, StringComparison.OrdinalIgnoreCase))
                     return true;
             }
             return false;
@@ -350,11 +351,146 @@ public class ServiceBusService : IAsyncDisposable
         return dm;
     }
 
+    public async Task DeadLetterMessageAsync(string queueName, long sequenceNumber, string? reason = null, string? errorDescription = null)
+    {
+        var clean = CleanEntityName(queueName);
+        _logger.LogInformation("Dead-lettering message with sequence number {SequenceNumber} from entity '{Entity}' (cleaned: '{Clean}')", sequenceNumber, queueName, clean);
+
+        if (!await EntityExistsViaRepoAsync(clean))
+        {
+            var errMsg = $"Entity '{clean}' was not found in the Service Bus namespace (from repository).";
+            _logger.LogWarning(errMsg);
+            throw new InvalidOperationException(errMsg);
+        }
+
+        var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
+        
+        try
+        {
+            // Receive messages and find the one with matching sequence number
+            // We may need to receive multiple messages to find the target
+            var found = false;
+            var maxAttempts = 100; // Limit attempts to avoid infinite loop
+            var attempts = 0;
+            
+            while (!found && attempts < maxAttempts)
+            {
+                var messages = await receiver.ReceiveMessagesAsync(32, TimeSpan.FromSeconds(2));
+                
+                if (!messages.Any())
+                    break;
+                
+                foreach (var message in messages)
+                {
+                    if (message.SequenceNumber == sequenceNumber)
+                    {
+                        // Found it! Dead-letter this message
+                        await receiver.DeadLetterMessageAsync(message, reason ?? "Manual dead-letter", errorDescription ?? "Message manually dead-lettered from UI");
+                        _logger.LogInformation("Successfully dead-lettered message {SequenceNumber} from '{Entity}'", sequenceNumber, clean);
+                        found = true;
+                        break;
+                    }
+                    else
+                    {
+                        // Not the target, abandon it so it goes back to the queue
+                        await receiver.AbandonMessageAsync(message);
+                    }
+                }
+                
+                attempts++;
+            }
+            
+            if (!found)
+            {
+                var errMsg = $"Message with sequence number {sequenceNumber} not found in entity '{clean}' after {attempts} attempts.";
+                _logger.LogWarning(errMsg);
+                throw new InvalidOperationException(errMsg);
+            }
+        }
+        finally
+        {
+            await receiver.DisposeAsync();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_client != null)
         {
             await _client.DisposeAsync();
         }
+    }
+
+    /// <summary>
+    /// Gets accurate message counts for an entity by peeking messages.
+    /// Returns (activeCount, deadLetterCount) where counts may be capped at maxPeek if there are more messages.
+    /// </summary>
+    public async Task<(long ActiveCount, long DeadLetterCount)> GetMessageCountsByPeekingAsync(string entityName, int maxPeek = 100)
+    {
+        var clean = CleanEntityName(entityName);
+        
+        try
+        {
+            // Peek main queue/subscription
+            long activeCount = 0;
+            try
+            {
+                var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
+                var messages = await receiver.PeekMessagesAsync(maxPeek);
+                activeCount = messages.Count;
+                await receiver.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not peek main queue '{Entity}', count will be 0", clean);
+            }
+
+            // Peek DLQ
+            long deadLetterCount = 0;
+            try
+            {
+                var dlqPath = $"{clean}/$DeadLetterQueue";
+                var dlqReceiver = Client.CreateReceiver(dlqPath, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
+                var dlqMessages = await dlqReceiver.PeekMessagesAsync(maxPeek);
+                deadLetterCount = dlqMessages.Count;
+                await dlqReceiver.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not peek DLQ for '{Entity}', count will be 0", clean);
+            }
+
+            return (activeCount, deadLetterCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get message counts by peeking for '{Entity}'", clean);
+            return (0, 0);
+        }
+    }
+
+    /// <summary>
+    /// Enriches a list of entities with message counts by peeking.
+    /// This allows the repository to focus on entity discovery while this service handles message counting.
+    /// </summary>
+    public async Task<List<Models.ServiceBusEntityInfo>> EnrichEntitiesWithMessageCountsAsync(List<Models.ServiceBusEntityInfo> entities, int maxPeek = 100)
+    {
+        foreach (var entity in entities)
+        {
+            try
+            {
+                var counts = await GetMessageCountsByPeekingAsync(entity.Name, maxPeek);
+                entity.ActiveMessageCount = counts.ActiveCount;
+                entity.DeadletterMessageCount = counts.DeadLetterCount;
+            }
+            catch
+            {
+                // If peeking fails, counts remain 0
+                entity.ActiveMessageCount = 0;
+                entity.DeadletterMessageCount = 0;
+            }
+        }
+        
+        return entities;
     }
 }

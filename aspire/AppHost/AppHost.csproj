@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\AspireAsbEmulatorUi.App\AspireAsbEmulatorUi.App.csproj" />
     <ProjectReference Include="..\..\src\AspireAsbEmulatorUi.Hosting\AspireAsbEmulatorUi.Hosting.csproj" IsAspireProjectResource="false" />
+    <ProjectReference Include="..\..\dummy-apps\MessageHandler\MessageHandler.csproj" />
   </ItemGroup>
 
 </Project>

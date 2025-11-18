@@ -1,5 +1,6 @@
 @using AspireAsbEmulatorUi.App.Services
 @using AspireAsbEmulatorUi.App.Models
+@using AspireAsbEmulatorUi.Models
 @using System.Text.Json
 @inject ServiceBusService Bus
 @inject SettingsService SettingsService
@@ -55,6 +56,10 @@
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleBroker(m)" title="Show Broker Props">Broker</button>
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleApp(m)" title="Show Application Props">Application</button>
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => CopyMessage(m)" title="Copy message to clipboard">Copy</button>
+                            @if (!_isReceive && !_isDlqSelected)
+                            {
+                                <button class="text-sm px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700" @onclick:stopPropagation="true" @onclick="() => DeadLetterMessage(m)" title="Move message to dead-letter queue">Dead-letter</button>
+                            }
                             <button class="text-sm px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick:stopPropagation="true" @onclick="() => SaveMessageAsCanned(m)" title="Save as canned message">Save as Canned</button>
                         </div>
                     </div>
@@ -130,6 +135,7 @@
 @code{
     [Parameter] public string SelectedEntity { get; set; } = string.Empty;
     [Parameter] public string DisplayName { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnEntityChanged { get; set; }
 
     private int _maxMessages = 20;
     private List<DisplayedMessage>? _messages;
@@ -223,6 +229,36 @@
         sb.AppendLine(m.Body);
 
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+    }
+
+    private async Task DeadLetterMessage(DisplayedMessage m)
+    {
+        if (string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        
+        try
+        {
+            await Bus.DeadLetterMessageAsync(SelectedEntity, m.SequenceNumber);
+            
+            // Give the emulator a moment to update the database
+            await Task.Delay(500);
+            
+            // Reload messages to show the updated list
+            await LoadMessages();
+            
+            // Notify parent that entities may have changed (message counts)
+            if (OnEntityChanged.HasDelegate)
+            {
+                await OnEntityChanged.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Add error message to the list
+            if (_messages != null)
+            {
+                _messages.Insert(0, new DisplayedMessage { Body = $"Error dead-lettering message: {ex.Message}" });
+            }
+        }
     }
 
     private void SaveMessageAsCanned(DisplayedMessage m)

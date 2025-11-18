@@ -7,9 +7,10 @@ It should use a nice monospaced font and a fixed dark theme.
 Json/xml in message bodies etc should use blazor monaco editor for syntax highlighting.
 
 TODO
-* Aspire resource and hosting package
-* Extension method to override settings.json in the Aspire AppHost
-* API for sending canned messages during integration tests?
-* search entities as you type - remove the filter button, add a clear button
-* editable entity name on canned messages in settings
-* improve import and export UI in settings, filepicker and file download and open in new tab etc
+* test API
+* increase test coverage
+
+FUTURE
+* send a batch of messages at once
+* watch mode which auto peeks messages on a timer?
+* dummy app which subscribes and completes/deadletters based on an application prop or something

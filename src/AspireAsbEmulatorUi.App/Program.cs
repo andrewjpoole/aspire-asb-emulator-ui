@@ -79,7 +79,9 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
         logger.LogWarning("No ASB connection string found for resource: {ResourceName}", resourceName);
     }
 
-    return new ServiceBusService(cs ?? string.Empty, logger, repo);
+    var service = new ServiceBusService(cs ?? string.Empty, logger, repo);
+    
+    return service;
 });
 
 builder.Services.AddSingleton<SettingsService>();

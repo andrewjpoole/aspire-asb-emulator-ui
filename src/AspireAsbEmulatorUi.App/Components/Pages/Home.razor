@@ -48,10 +48,29 @@
                         </div>
 
                         <button title="Refresh Entities now!" class=@($"px-3 py-1 rounded bg-blue-600 text-white flex items-center gap-2 {(_autoRefreshEnabled ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700")}") @onclick="Refresh" disabled="@_autoRefreshEnabled">
+                            @if (_loading)
+                            {
+                                <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            }
                             <span class="text-sm">Now!</span>
                         </button>
                     </div>
-                    <div class="text-xs text-slate-400" title="Last refresh time">@@ @(_lastRefreshed.HasValue ? _lastRefreshed.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Never")</div>
+                    <div class="flex items-center gap-2">
+                        @if (_loading)
+                        {
+                            <span class="text-xs text-blue-400 flex items-center gap-1">
+                                <svg class="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Refreshing...
+                            </span>
+                        }
+                        <div class="text-xs text-slate-400" title="Last refresh time">@@ @(_lastRefreshed.HasValue ? _lastRefreshed.Value.ToString("yyyy-MM-dd HH:mm:ss") : "Never")</div>
+                    </div>
                 </div>
             </div>
 
@@ -65,40 +84,35 @@
                         Queues
                     </h3>
                     <div class="space-y-2">
-                        @if (_loading)
+                        @{
+                            var queues = _entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                        }
+                        @if (!queues.Any() && !_loading)
                         {
-                            <div class="text-sm text-slate-400 py-2">Loading...</div>
+                            <div class="bg-slate-900 rounded p-3 text-slate-400 text-sm border border-slate-700">No queues found.</div>
                         }
                         else
                         {
-                            var queues = _entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
-                            if (!queues.Any())
+                            @foreach (var e in queues)
                             {
-                                <div class="bg-slate-900 rounded p-3 text-slate-400 text-sm border border-slate-700">No queues found.</div>
-                            }
-                            else
-                            {
-                                foreach (var e in queues)
-                                {
-                                    var isSelected = _selectedEntity == e.Name;
-                                    var cardClass = isSelected 
-                                        ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
-                                        : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
-                                    
-                                    <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
-                                        <div class="flex items-center justify-between">
-                                            <div class="font-medium text-slate-100">@e.DisplayName</div>
-                                            <div class="flex items-center gap-2">
-                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">
-                                                    <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
-                                                </div>
-                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages (Note: ASB emulator SQL entityLookup table is quite slow to refresh message counts, typically ~15 seconds!">
-                                                    <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
-                                                </div>
+                                var isSelected = _selectedEntity == e.Name;
+                                var cardClass = isSelected 
+                                    ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
+                                    : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
+                                
+                                <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
+                                    <div class="flex items-center justify-between">
+                                        <div class="font-medium text-slate-100">@e.DisplayName</div>
+                                        <div class="flex items-center gap-2">
+                                            <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
+                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
+                                            </div>
+                                            <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
+                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
                                             </div>
                                         </div>
                                     </div>
-                                }
+                                </div>
                             }
                         }
                     </div>
@@ -113,41 +127,68 @@
                         Topics
                     </h3>
                     <div class="space-y-2">
-                        @if (_loading)
+                        @{
+                            var topics = _entities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                        }
+                        @if (!topics.Any() && !_loading)
                         {
-                            <div class="text-sm text-slate-400 py-2">Loading...</div>
+                            <div class="bg-slate-900 rounded p-3 text-slate-400 text-sm border border-slate-700">No topics found.</div>
                         }
                         else
                         {
-                            var topics = _entities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
-                            if (!topics.Any())
+                            @foreach (var topic in topics)
                             {
-                                <div class="bg-slate-900 rounded p-3 text-slate-400 text-sm border border-slate-700">No topics found.</div>
-                            }
-                            else
-                            {
-                                foreach (var topic in topics)
-                                {
-                                    var isTopicSelected = _selectedEntity == topic.Name;
-                                    var topicCardClass = isTopicSelected 
-                                        ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
-                                        : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
-                                    
-                                    <div class="@topicCardClass" @onclick="@(() => SelectEntity(topic))">
-                                        <div class="flex items-center justify-between">
-                                            <div class="font-medium text-slate-100">@topic.DisplayName</div>
-                                            <div class="flex items-center gap-2">
-                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
-                                                    <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@topic.ActiveMessageCount</span>
-                                                </div>
-                                                <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
-                                                    <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@topic.DeadletterMessageCount</span>
-                                                </div>
+                                var isTopicSelected = _selectedEntity == topic.Name;
+                                var topicCardClass = isTopicSelected 
+                                    ? "p-3 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors" 
+                                    : "p-3 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
+                                
+                                <div class="@topicCardClass" @onclick="@(() => SelectEntity(topic))">
+                                    <div class="flex items-center justify-between">
+                                        <div class="font-medium text-slate-100">@topic.DisplayName</div>
+                                        <div class="flex items-center gap-2">
+                                            <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
+                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@topic.ActiveMessageCount</span>
+                                            </div>
+                                            <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
+                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@topic.DeadletterMessageCount</span>
                                             </div>
                                         </div>
                                     </div>
+                                </div>
 
-                                    @RenderSubscriptions(topic)
+                                @* Render subscriptions for this topic *@
+                                var subs = _entities.Where(e => e.EntityType == "Subscription" && e.ParentTopic == topic.Name && EvaluateFilter(e)).ToList();
+                                @if (subs.Any())
+                                {
+                                    <div class="ml-6 space-y-1 mt-1">
+                                        @foreach (var sub in subs)
+                                        {
+                                            var isSubSelected = _selectedEntity == sub.Name;
+                                            var subCardClass = isSubSelected
+                                                ? "p-2 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors"
+                                                : "p-2 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
+
+                                            <div class="@subCardClass" @onclick="@(() => SelectEntity(sub))">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="flex items-center gap-2">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                        </svg>
+                                                        <span class="text-sm font-medium text-slate-200">@sub.DisplayName</span>
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
+                                                            <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@sub.ActiveMessageCount</span>
+                                                        </div>
+                                                        <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
+                                                            <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@sub.DeadletterMessageCount</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
                                 }
                             }
                         }
@@ -209,7 +250,7 @@
                 <div class="flex-1 overflow-y-auto p-4">
                     @if (_activeTab == "viewer")
                     {
-                        <MessageViewer SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" />
+                        <MessageViewer SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" OnEntityChanged="RefreshEntities" />
                     }
                     else if (_activeTab == "sender")
                     {
@@ -250,9 +291,12 @@
     private async Task Refresh()
     {
         _loading = true;
+        StateHasChanged(); // Ensure UI updates immediately to show spinner
+        
         try
         {
-            _entities = await Repo.GetEntitiesAsync();
+            var entities = await Repo.GetEntitiesAsync();
+            _entities = await Bus.EnrichEntitiesWithMessageCountsAsync(entities);
             _lastRefreshed = DateTime.Now;
         }
         catch (Exception ex)
@@ -263,7 +307,14 @@
         finally
         {
             _loading = false;
+            StateHasChanged(); // Ensure UI updates to hide spinner
         }
+    }
+
+    private async Task RefreshEntities()
+    {
+        await Refresh();
+        StateHasChanged();
     }
 
     private void OnFilterChanged()
@@ -345,79 +396,6 @@
         }
     }
 
-    private RenderFragment RenderSubscriptions(Models.ServiceBusEntityInfo topic) => builder =>
-    {
-        var subs = _entities.Where(e => e.EntityType == "Subscription" && e.ParentTopic == topic.Name && EvaluateFilter(e)).ToList();
-        
-        if (subs.Any())
-        {
-            builder.OpenElement(0, "div");
-            builder.AddAttribute(1, "class", "ml-6 space-y-1 mt-1");
-            
-            foreach (var sub in subs)
-            {
-                var isSubSelected = _selectedEntity == sub.Name;
-                var subCardClass = isSubSelected
-                    ? "p-2 rounded cursor-pointer border-2 border-blue-500 bg-slate-700 hover:bg-slate-600 transition-colors"
-                    : "p-2 rounded cursor-pointer border border-slate-600 bg-slate-900 hover:bg-slate-700 transition-colors";
-
-                builder.OpenElement(2, "div");
-                builder.AddAttribute(3, "class", subCardClass);
-                builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => SelectEntity(sub)));
-                
-                builder.OpenElement(5, "div");
-                builder.AddAttribute(6, "class", "flex items-center justify-between");
-                
-                // Left side - icon and name
-                builder.OpenElement(7, "div");
-                builder.AddAttribute(8, "class", "flex items-center gap-2");
-                
-                builder.AddMarkupContent(9, @"<svg xmlns=""http://www.w3.org/2000/svg"" class=""h-4 w-4 text-purple-300"" fill=""none"" viewBox=""0 0 24 24"" stroke=""currentColor"">
-                    <path stroke-linecap=""round"" stroke-linejoin=""round"" stroke-width=""2"" d=""M9 5l7 7-7 7"" />
-                </svg>");
-                
-                builder.OpenElement(10, "span");
-                builder.AddAttribute(11, "class", "text-sm font-medium text-slate-200");
-                builder.AddContent(12, sub.DisplayName);
-                builder.CloseElement(); // span
-                
-                builder.CloseElement(); // div (left side)
-                
-                // Right side - message counts
-                builder.OpenElement(13, "div");
-                builder.AddAttribute(14, "class", "flex items-center gap-2");
-                
-                // Active count
-                builder.OpenElement(15, "div");
-                builder.AddAttribute(16, "class", "text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300");
-                builder.AddAttribute(17, "title", "Active messages");
-                builder.AddMarkupContent(18, @"<span class=""text-slate-400"">Active:</span> ");
-                builder.OpenElement(19, "span");
-                builder.AddAttribute(20, "class", "font-semibold text-green-400");
-                builder.AddContent(21, sub.ActiveMessageCount);
-                builder.CloseElement(); // span
-                builder.CloseElement(); // div (active)
-                
-                // DLQ count
-                builder.OpenElement(22, "div");
-                builder.AddAttribute(23, "class", "text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300");
-                builder.AddAttribute(24, "title", "Dead-letter queue messages");
-                builder.AddMarkupContent(25, @"<span class=""text-slate-400"">DLQ:</span> ");
-                builder.OpenElement(26, "span");
-                builder.AddAttribute(27, "class", "font-semibold text-red-400");
-                builder.AddContent(28, sub.DeadletterMessageCount);
-                builder.CloseElement(); // span
-                builder.CloseElement(); // div (dlq)
-                
-                builder.CloseElement(); // div (right side)
-                builder.CloseElement(); // div (flex container)
-                builder.CloseElement(); // div (card)
-            }
-            
-            builder.CloseElement(); // div (ml-6 container)
-        }
-    };
-
     private Task OnAutoRefreshChanged(ChangeEventArgs e)
     {
         // parse checkbox value
@@ -447,7 +425,6 @@
                     await InvokeAsync(async () =>
                     {
                         await Refresh();
-                        StateHasChanged();
                     });
                 }
                 catch { }

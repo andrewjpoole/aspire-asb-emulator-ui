@@ -1,6 +1,6 @@
 using Aspire.AsbEmulatorUi.Integration;
 using Aspire.Hosting.Azure;
-using AspireAsbEmulatorUi.App.Models;
+using AspireAsbEmulatorUi.Models;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 

@@ -27,11 +27,7 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.0.0" />
     <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\AspireAsbEmulatorUi.App\AspireAsbEmulatorUi.App.csproj" />
-  </ItemGroup>
+  </ItemGroup>  
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />

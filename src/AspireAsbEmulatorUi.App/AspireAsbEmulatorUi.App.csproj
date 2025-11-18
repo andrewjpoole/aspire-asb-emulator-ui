@@ -18,6 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AspireAsbEmulatorUi.Hosting\AspireAsbEmulatorUi.Hosting.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="settings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
