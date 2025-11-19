@@ -54,7 +54,9 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./src/AspireAsbEmulatorUi.App
+          # Use the `src` folder as the build context so project references
+          # (for example AspireAsbEmulatorUi.Hosting) are available during restore/build
+          context: ./src
           file: ./src/AspireAsbEmulatorUi.App/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
