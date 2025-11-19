@@ -22,7 +22,7 @@
 	<PackageProjectUrl>https://github.com/andrewjpoole/aspire-asb-emulator-ui/README.md</PackageProjectUrl>
 	<IncludeSymbols>true</IncludeSymbols>
 	<SymbolPackageFormat>snupkg</SymbolPackageFormat>
-	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<PackageReadmeFile Condition="Exists('$(MSBuildThisFileDirectory)..\..\README.md')">README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,8 +30,8 @@
     <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.0.0" />
   </ItemGroup>  
 
-  <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
+	<ItemGroup>
+		<None Include="..\..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\..\README.md')" />
+	</ItemGroup>
 
 </Project>
