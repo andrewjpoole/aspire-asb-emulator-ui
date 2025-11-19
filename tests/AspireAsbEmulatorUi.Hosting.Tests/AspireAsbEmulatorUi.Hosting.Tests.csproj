@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AspireAsbEmulatorUi.Hosting\AspireAsbEmulatorUi.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\AspireAsbEmulatorUi.App\AspireAsbEmulatorUi.App.csproj" />
   </ItemGroup>
 
 </Project>

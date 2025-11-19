@@ -1,6 +1,7 @@
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using AspireAsbEmulatorUi.App.Models;
+using AspireAsbEmulatorUi.Models;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
