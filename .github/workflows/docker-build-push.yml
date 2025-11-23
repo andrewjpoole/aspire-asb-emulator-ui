@@ -50,8 +50,11 @@ jobs:
             type=semver,pattern={{major}}
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.run_number }}
+            type=raw,value=${{ github.sha }}
 
       - name: Build and push Docker image
+        id: docker_build
         uses: docker/build-push-action@v5
         with:
           # Use the `src` folder as the build context so project references

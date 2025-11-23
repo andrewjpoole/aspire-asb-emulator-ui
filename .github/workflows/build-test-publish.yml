@@ -2,9 +2,14 @@ name: Publish NuGet Package
 
 on:
   push:
+    branches:
+      - main
     tags:
-      - 'v*.*.*'  # Triggers on version tags like v1.0.0
-  workflow_dispatch:  # Allows manual trigger from GitHub UI
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   publish:

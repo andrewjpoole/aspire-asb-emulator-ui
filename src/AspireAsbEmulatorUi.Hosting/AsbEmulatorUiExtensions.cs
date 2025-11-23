@@ -26,16 +26,17 @@ public static class AsbEmulatorUiResourceExtensions
         int httpPort = 8000)
     {       
         var asbEmulatorUiResourceBuilder = builder.AddResource(new AsbEmulatorUiResource(name))
-                    .WithImage("andrewjpoole/aspireasbemulatorui")
-                    .WithImageRegistry("docker.io")
-                    .WithHttpEndpoint(port: httpPort, targetPort: 8080)
-                    .WithReference(serviceBusResource)  // This passes the connection string!
-                    .WaitFor(serviceBusResource)
-                    .ExcludeFromManifest()
-                    .WithEnvironment(async (context) =>
-                    {
-                        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBusResource);
-                    }); // Not using builder extension pattern here to enable easier local testing when resource will be a local ProjectResource rather than a AsbEmulatorUiResource.
+            .WithImage("andrewjpoole/aspireasbemulatorui")
+            .WithImageTag("latest")
+            .WithImageRegistry("docker.io")
+            .WithHttpEndpoint(port: httpPort, targetPort: 8080)
+            .WithReference(serviceBusResource)
+            .WaitFor(serviceBusResource)
+            .ExcludeFromManifest()
+            .WithEnvironment(async (context) =>
+            {
+                await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBusResource);
+            }); // Not using builder extension pattern here to enable easier local testing when resource will be a local ProjectResource rather than a AsbEmulatorUiResource.
         return asbEmulatorUiResourceBuilder;
     }
 
