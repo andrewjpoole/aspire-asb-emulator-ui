@@ -14,12 +14,12 @@ RUN dotnet restore "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj"
 # Copy all source files from the context (the `src` folder)
 COPY . .
 
-# Build the application
-RUN dotnet build "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/build
+# Build the application (don't restore again; restore was run earlier)
+RUN dotnet build "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/build --no-restore
 
 # Publish stage
 FROM build AS publish
-RUN dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/publish /p:UseAppHost=false --no-restore
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
