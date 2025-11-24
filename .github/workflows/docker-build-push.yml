@@ -58,11 +58,13 @@ jobs:
         with:
           images: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Push a human-friendly semver tag (from csproj) and a semver+short-sha for uniqueness,
-            # plus `latest` on the default branch. Use digest (`image_ref`) for immutable references.
             type=raw,value=${{ steps.read_version.outputs.image_tag }}
             type=raw,value=${{ steps.read_version.outputs.image_tag_with_sha }}
             type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Print meta tags
+        run: |
+          echo "steps.meta.outputs.tags='${{ steps.meta.outputs.tags }}'"
 
       - name: Build and push Docker image
         id: docker_build
