@@ -3,6 +3,7 @@ using Aspire.Hosting.Azure;
 using AspireAsbEmulatorUi.Models;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Reflection;
 
 namespace Aspire.Hosting;
 
@@ -23,11 +24,29 @@ public static class AsbEmulatorUiResourceExtensions
         this IDistributedApplicationBuilder builder,
         string name,
         IResourceBuilder<AzureServiceBusResource> serviceBusResource,
-        int httpPort = 8000)
+        int httpPort = 8000,
+        string? defaultImageTag = "1.0.2")
     {       
+        // Determine an image tag from the hosting assembly's version information.
+        // Prefer AssemblyInformationalVersion (maps to <Version> in the csproj),
+        // then AssemblyName.Version, then the provided default, then 'latest'.
+        string? assemblyVersion = null;
+        try
+        {
+            var asm = typeof(AsbEmulatorUiResource).Assembly;
+            assemblyVersion = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                ?? asm.GetName().Version?.ToString();
+        }
+        catch
+        {
+            assemblyVersion = null;
+        }
+
+        var imageTag = assemblyVersion ?? defaultImageTag ?? "latest";
+
         var asbEmulatorUiResourceBuilder = builder.AddResource(new AsbEmulatorUiResource(name))
             .WithImage("andrewjpoole/aspireasbemulatorui")
-            .WithImageTag("latest")
+            .WithImageTag(imageTag)
             .WithImageRegistry("docker.io")
             .WithHttpEndpoint(port: httpPort, targetPort: 8080)
             .WithReference(serviceBusResource)
