@@ -49,9 +49,9 @@ jobs:
           if (-not (Test-Path $csproj)) {
             Write-Host "Project file not found: $csproj"
             Write-Host "Listing src folder (first 50):" ; Get-ChildItem -Path src -Recurse -Depth 2 | Select-Object -First 50 | ForEach-Object { Write-Host $_.FullName }
-            echo "image_version=0.0.0" >> $GITHUB_OUTPUT
-            echo "image_tag=0.0.0" >> $GITHUB_OUTPUT
-            echo "image_tag_with_sha=0.0.0-unknown" >> $GITHUB_OUTPUT
+            echo "image_version=0.0.0" >> $env:GITHUB_OUTPUT
+            echo "image_tag=0.0.0" >> $env:GITHUB_OUTPUT
+            echo "image_tag_with_sha=0.0.0-unknown" >> $env:GITHUB_OUTPUT
             exit 0
           }
           Write-Host "Project file found. Showing first 40 lines:";
@@ -69,9 +69,9 @@ jobs:
           else { $shortsha = 'unknown' }
           $image_tag = $version
           $image_tag_with_sha = "$version-$shortsha"
-          echo "image_version=$version" >> $GITHUB_OUTPUT
-          echo "image_tag=$image_tag" >> $GITHUB_OUTPUT
-          echo "image_tag_with_sha=$image_tag_with_sha" >> $GITHUB_OUTPUT
+          echo "image_version=$version" >> $env:GITHUB_OUTPUT
+          echo "image_tag=$image_tag" >> $env:GITHUB_OUTPUT
+          echo "image_tag_with_sha=$image_tag_with_sha" >> $env:GITHUB_OUTPUT
 
       - name: Print read_version outputs
         run: |
