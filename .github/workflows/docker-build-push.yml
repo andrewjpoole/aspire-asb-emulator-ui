@@ -42,10 +42,21 @@ jobs:
         shell: pwsh
         run: |
           $csproj = 'src/AspireAsbEmulatorUi.Hosting/AspireAsbEmulatorUi.Hosting.csproj'
-          $xml = [xml](Get-Content $csproj)
-          $version = ($xml.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ } | Select-Object -First 1)
-          if (-not $version) { $version = '0.0.0' }
-          $shortsha = '${{ github.sha }}'.Substring(0,7)
+          if (-not (Test-Path $csproj)) {
+            Write-Host "Project file not found: $csproj"
+            echo "image_version=0.0.0" >> $GITHUB_OUTPUT
+            echo "image_tag=0.0.0" >> $GITHUB_OUTPUT
+            echo "image_tag_with_sha=0.0.0-unknown" >> $GITHUB_OUTPUT
+            exit 0
+          }
+          $content = Get-Content $csproj -Raw
+          $version = '0.0.0'
+          if ($content -match '<Version>(.*?)</Version>') {
+            $version = $matches[1].Trim()
+          }
+          $shortsha = '${{ github.sha }}'
+          if ($shortsha.Length -ge 7) { $shortsha = $shortsha.Substring(0,7) }
+          else { $shortsha = 'unknown' }
           $image_tag = $version
           $image_tag_with_sha = "$version-$shortsha"
           echo "image_version=$version" >> $GITHUB_OUTPUT
