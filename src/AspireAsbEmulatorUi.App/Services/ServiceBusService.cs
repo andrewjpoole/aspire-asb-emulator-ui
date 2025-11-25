@@ -51,7 +51,7 @@ public class ServiceBusService : IAsyncDisposable
         return built;
     }
 
-    private static string CleanEntityName(string entityName)
+    internal static string CleanEntityName(string entityName)
     {
         if (string.IsNullOrWhiteSpace(entityName))
             return entityName ?? string.Empty;
@@ -64,7 +64,12 @@ public class ServiceBusService : IAsyncDisposable
             clean = clean.Substring("SBEMULATORNS".Length);
         }
         
-        clean = clean.TrimStart(':', '|', '/', '\\', '.', '-', '_');
+        // Preserve internal and leading '.' characters because many real-world
+        // entity names contain periods (e.g. FIM1437.PAYMENTS...). Removing
+        // '.' here prevented discovery of such entities. Only trim the
+        // explicit separators that are known to be used around the namespace
+        // prefixes while keeping '.' intact.
+        clean = clean.TrimStart(':', '|', '/', '\\', '-', '_');
         
         // Split on : to remove QUEUE: or TOPIC: prefix
         var parts = clean.Split(new[] { ':', '|' }, 2);
@@ -73,7 +78,9 @@ public class ServiceBusService : IAsyncDisposable
             clean = parts[1];
         }
         
-        clean = clean.TrimStart(':', '|', '/', '\\', '.', '-', '_');
+        // Trim the same set again after removing QUEUE:/TOPIC: prefixes,
+        // but do NOT remove '.' so dotted names are preserved.
+        clean = clean.TrimStart(':', '|', '/', '\\', '-', '_');
         
         // Check if this is a subscription (contains |)
         // Format: TOPIC-NAME|SUBSCRIPTION-NAME
@@ -238,7 +245,7 @@ public class ServiceBusService : IAsyncDisposable
             clean, msg.MessageId ?? "(none)", body?.Length ?? 0, applicationProperties?.Count ?? 0, msg.ContentType);
     }    
 
-    private async Task<bool> EntityExistsViaRepoAsync(string cleanedEntityNameLower)
+    internal async Task<bool> EntityExistsViaRepoAsync(string cleanedEntityNameLower)
     {
         try
         {
@@ -292,7 +299,7 @@ public class ServiceBusService : IAsyncDisposable
         }
     }
 
-    private static string CleanEntityNameForComparison(string entityName)
+    internal static string CleanEntityNameForComparison(string entityName)
     {
         if (string.IsNullOrWhiteSpace(entityName))
             return string.Empty;

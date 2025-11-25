@@ -16,7 +16,7 @@ public class AsbEmulatorSqlEntityRepository
         _connectionString = connectionString;
     }
 
-    public async Task<List<ServiceBusEntityInfo>> GetEntitiesAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<List<ServiceBusEntityInfo>> GetEntitiesAsync(CancellationToken cancellationToken = default)
     {
         var results = new List<ServiceBusEntityInfo>();
         if (string.IsNullOrWhiteSpace(_connectionString))
@@ -48,15 +48,7 @@ public class AsbEmulatorSqlEntityRepository
                 continue;
 
             // Clean the name by removing the namespace prefix
-            string cleanName = fullName;
-            if (fullName.StartsWith("SBEMULATORNS:QUEUE:", StringComparison.OrdinalIgnoreCase))
-            {
-                cleanName = fullName.Substring("SBEMULATORNS:QUEUE:".Length);
-            }
-            else if (fullName.StartsWith("SBEMULATORNS:TOPIC:", StringComparison.OrdinalIgnoreCase))
-            {
-                cleanName = fullName.Substring("SBEMULATORNS:TOPIC:".Length);
-            }
+            string cleanName = StripNamespacePrefix(fullName);
 
             // Determine entity type
             string entityType;
@@ -93,5 +85,22 @@ public class AsbEmulatorSqlEntityRepository
         }
 
         return results;
+    }
+
+    internal static string StripNamespacePrefix(string fullName)
+    {
+        if (string.IsNullOrEmpty(fullName))
+            return fullName ?? string.Empty;
+
+        if (fullName.StartsWith("SBEMULATORNS:QUEUE:", StringComparison.OrdinalIgnoreCase))
+        {
+            return fullName.Substring("SBEMULATORNS:QUEUE:".Length);
+        }
+        else if (fullName.StartsWith("SBEMULATORNS:TOPIC:", StringComparison.OrdinalIgnoreCase))
+        {
+            return fullName.Substring("SBEMULATORNS:TOPIC:".Length);
+        }
+
+        return fullName;
     }
 }
