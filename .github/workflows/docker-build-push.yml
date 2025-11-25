@@ -52,7 +52,7 @@ jobs:
           echo "image_tag=$image_tag" >> $GITHUB_OUTPUT
           echo "image_tag_with_sha=$image_tag_with_sha" >> $GITHUB_OUTPUT
 
-      - name: Debug: print read_version outputs
+      - name: Print read_version outputs
         run: |
           echo "read_version.image_tag='${{ steps.read_version.outputs.image_tag }}'"
           echo "read_version.image_tag_with_sha='${{ steps.read_version.outputs.image_tag_with_sha }}'"
@@ -65,11 +65,7 @@ jobs:
           tags: |
             type=raw,value=${{ steps.read_version.outputs.image_tag }}
             type=raw,value=${{ steps.read_version.outputs.image_tag_with_sha }}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Print meta tags
-        run: |
-          echo "steps.meta.outputs.tags='${{ steps.meta.outputs.tags }}'"
+            type=raw,value=latest,enable={{is_default_branch}}      
 
       - name: Build and push Docker image
         id: docker_build
