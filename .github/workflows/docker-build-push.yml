@@ -52,6 +52,11 @@ jobs:
           echo "image_tag=$image_tag" >> $GITHUB_OUTPUT
           echo "image_tag_with_sha=$image_tag_with_sha" >> $GITHUB_OUTPUT
 
+      - name: Debug: print read_version outputs
+        run: |
+          echo "read_version.image_tag='${{ steps.read_version.outputs.image_tag }}'"
+          echo "read_version.image_tag_with_sha='${{ steps.read_version.outputs.image_tag_with_sha }}'"
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
@@ -76,7 +81,10 @@ jobs:
           file: ./src/AspireAsbEmulatorUi.App/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.read_version.outputs.image_tag }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.read_version.outputs.image_tag_with_sha }}
+            ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
