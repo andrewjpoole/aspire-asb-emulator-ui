@@ -41,10 +41,7 @@ jobs:
         id: read_version
         shell: pwsh
         run: |
-          $csproj = 'src/AspireAsbEmulatorUi.Hosting/AspireAsbEmulatorUi.Hosting.csproj'
-          Write-Host "PWD: " (Get-Location)
-          Write-Host "GITHUB_WORKSPACE: $env:GITHUB_WORKSPACE"
-          Write-Host "Listing root (first 20):" ; Get-ChildItem -Force -Depth 1 | Select-Object -First 20 | ForEach-Object { Write-Host $_.FullName }
+          $csproj = 'src/AspireAsbEmulatorUi.Hosting/AspireAsbEmulatorUi.Hosting.csproj'         
           Write-Host "Checking project file path: $csproj"
           if (-not (Test-Path $csproj)) {
             Write-Host "Project file not found: $csproj"
@@ -53,9 +50,7 @@ jobs:
             echo "image_tag=0.0.0" >> $env:GITHUB_OUTPUT
             echo "image_tag_with_sha=0.0.0-unknown" >> $env:GITHUB_OUTPUT
             exit 0
-          }
-          Write-Host "Project file found. Showing first 40 lines:";
-          Get-Content $csproj -TotalCount 40 | ForEach-Object { Write-Host $_ }
+          }          
           $content = Get-Content $csproj -Raw
           $version = '0.0.0'
           if ($content -match '<Version>(.*?)</Version>') {
@@ -83,10 +78,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=${{ steps.read_version.outputs.image_tag }}
-            type=raw,value=${{ steps.read_version.outputs.image_tag_with_sha }}
-            type=raw,value=latest,enable={{is_default_branch}}      
 
       - name: Build and push Docker image
         id: docker_build

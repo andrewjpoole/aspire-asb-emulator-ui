@@ -36,6 +36,16 @@ public static class AsbEmulatorUiResourceExtensions
             var asm = typeof(AsbEmulatorUiResource).Assembly;
             assemblyVersion = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
                 ?? asm.GetName().Version?.ToString();
+            if (!string.IsNullOrEmpty(assemblyVersion))
+            {
+                // Remove build metadata ("+...") and pre-release suffix ("-...") to get core semver
+                var v = assemblyVersion;
+                var plus = v.IndexOf('+');
+                if (plus >= 0) v = v.Substring(0, plus);
+                var dash = v.IndexOf('-');
+                if (dash >= 0) v = v.Substring(0, dash);
+                assemblyVersion = v.Trim();
+            }
         }
         catch
         {
