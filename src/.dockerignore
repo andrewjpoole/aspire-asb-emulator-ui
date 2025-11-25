@@ -1,0 +1,18 @@
+# Ignore build outputs and local artifacts from all projects in the context
+**/bin/
+**/obj/
+**/out/
+**/publish/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+*.log
+tmp_publish/
+.git/
+node_modules/
+.nuget/
+
+# Ignore Dockerfile builds cache directories
+.dockerignore

@@ -104,3 +104,4 @@ jobs:
         id: set_image_ref
         run: |
           echo "image_ref=${{ env.REGISTRY }}/${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}" >> $GITHUB_OUTPUT
+

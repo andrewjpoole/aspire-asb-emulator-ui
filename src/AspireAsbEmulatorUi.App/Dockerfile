@@ -2,6 +2,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+# Set NuGet package folder to a Linux path to avoid Windows fallback-folder issues
+ENV NUGET_PACKAGES=/root/.nuget/packages
+
 # Copy only the project files needed for restore first (improves cache)
 # This Dockerfile is intended to be used with the build context set to the repository's `src` folder
 # so referenced projects (AspireAsbEmulatorUi.Hosting) are available during restore.
@@ -14,12 +17,9 @@ RUN dotnet restore "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj"
 # Copy all source files from the context (the `src` folder)
 COPY . .
 
-# Build the application (don't restore again; restore was run earlier)
-RUN dotnet build "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/build --no-restore
-
-# Publish stage
+# Publish in one step (let publish handle restore to avoid restore/build mismatch inside container)
 FROM build AS publish
-RUN dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/publish /p:UseAppHost=false --no-restore
+RUN dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
