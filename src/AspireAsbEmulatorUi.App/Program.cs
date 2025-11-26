@@ -9,11 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Register application services
-builder.Services.AddSingleton(sp =>
+// Register application repository via DI so it can receive logging and other services
+builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
 {
-    var repo = new AsbEmulatorSqlEntityRepository();
     var cfg = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<AsbEmulatorSqlEntityRepository>>();
+    var repo = new AsbEmulatorSqlEntityRepository(logger);
 
     // Prefer a full connection string if provided
     var cs = cfg["asb-sql-connectionstring"] ?? cfg["ASB_SQL_CONNECTIONSTRING"];
@@ -68,13 +69,7 @@ builder.Services.AddSingleton<ServiceBusService>(sp =>
     var cs = cfg[connectionStringKey]
              ?? cfg[$"ConnectionStrings:{resourceName}"];
 
-    if (!string.IsNullOrWhiteSpace(cs))
-    {
-        // Log the connection string format (without sensitive data)
-        var csPreview = cs.Length > 50 ? cs.Substring(0, 50) + "..." : cs;
-        logger.LogInformation("ASB Connection String (preview): {ConnectionString}", csPreview);
-    }
-    else
+    if (string.IsNullOrWhiteSpace(cs))    
     {
         logger.LogWarning("No ASB connection string found for resource: {ResourceName}", resourceName);
     }

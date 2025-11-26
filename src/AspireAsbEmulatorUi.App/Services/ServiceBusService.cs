@@ -1,6 +1,5 @@
 using Azure.Messaging.ServiceBus;
 using System.Text;
-using System.Text.Json;
 
 namespace AspireAsbEmulatorUi.App.Services;
 
@@ -19,7 +18,7 @@ public class ServiceBusService : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(_connectionString))
         {
             var preview = _connectionString.Length > 80 ? _connectionString[..80] + "..." : _connectionString;
-            _logger.LogInformation("ServiceBusService created with connection string preview: {Preview}", preview);
+            _logger.LogInformation("ServiceBusService created with connection string: {Preview}", preview);
         }
         else
         {
@@ -250,6 +249,7 @@ public class ServiceBusService : IAsyncDisposable
         try
         {
             var entities = await _repo.GetEntitiesAsync();
+            _logger.LogDebug("Repository returned {Count} entities for existence check", entities?.Count ?? 0);
             
             // Check if it ends with /$DeadLetterQueue and strip it for validation
             var isDlq = cleanedEntityNameLower.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase);
@@ -269,12 +269,14 @@ public class ServiceBusService : IAsyncDisposable
                     
                     // Look for subscription with format TOPIC-NAME|SUB-NAME
                     var expectedFormat = $"{topicName}|{subName}";
+                    _logger.LogDebug("Looking for subscription matching '{Expected}'", expectedFormat);
                     
                     foreach (var e in entities)
                     {
                         if (e.EntityType == "Subscription")
                         {
                             var candidate = CleanEntityNameForComparison(e.Name);
+                            _logger.LogTrace("Comparing subscription candidate '{Candidate}' to expected '{Expected}'", candidate, expectedFormat);
                             if (string.Equals(candidate, expectedFormat, StringComparison.OrdinalIgnoreCase))
                                 return true;
                         }
@@ -287,6 +289,7 @@ public class ServiceBusService : IAsyncDisposable
             foreach (var e in entities)
             {
                 var candidate = CleanEntityNameForComparison(e.Name);
+                _logger.LogTrace("Comparing entity candidate '{Candidate}' to '{Target}' (DLQ stripped '{PathWithoutDlq}')", candidate, cleanedEntityNameLower, pathWithoutDlq);
                 if (string.Equals(candidate, pathWithoutDlq, StringComparison.OrdinalIgnoreCase))
                     return true;
             }

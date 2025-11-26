@@ -6,23 +6,34 @@ namespace AspireAsbEmulatorUi.App.Services;
 public class AsbEmulatorSqlEntityRepository
 {
     private string _connectionString = string.Empty;
+    private readonly ILogger<AsbEmulatorSqlEntityRepository> _logger;
 
-    public AsbEmulatorSqlEntityRepository()
+    public AsbEmulatorSqlEntityRepository(ILogger<AsbEmulatorSqlEntityRepository> logger)
     {
+        _logger = logger;
     }
 
     public void SetConnectionString(string connectionString)
     {
         _connectionString = connectionString;
+        _logger.LogInformation("Set connection string for {Repository} {connectionString}", nameof(AsbEmulatorSqlEntityRepository), connectionString);
     }
 
     public virtual async Task<List<ServiceBusEntityInfo>> GetEntitiesAsync(CancellationToken cancellationToken = default)
     {
         var results = new List<ServiceBusEntityInfo>();
         if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            _logger.LogInformation("Asb repository connection string not set; returning 0 entities.");
             return results;
+        }
 
         using var conn = new SqlConnection(_connectionString);
+        try
+        {
+            _logger.LogInformation("Opening SQL connection to retrieve ASB emulator entities.");
+        }
+        catch { }
         await conn.OpenAsync(cancellationToken);
 
         var cmd = conn.CreateCommand();
@@ -35,9 +46,12 @@ public class AsbEmulatorSqlEntityRepository
             AND e.Name NOT LIKE '%$transfer'
             AND e.Name NOT LIKE '%$DEFAULT'
         ORDER BY e.Name";
-
+       _logger.LogInformation("Executing entity lookup SQL to read entity lookup table.");
+       _logger.LogDebug("Entity lookup SQL: {Sql}", cmd.CommandText);
+      
         using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
+        var rows = 0;
         while (await reader.ReadAsync(cancellationToken))
         {
             var id = reader.GetInt64(reader.GetOrdinal("EntityId"));
@@ -49,7 +63,9 @@ public class AsbEmulatorSqlEntityRepository
 
             // Clean the name by removing the namespace prefix
             string cleanName = StripNamespacePrefix(fullName);
-
+            rows++;
+            _logger.LogInformation("Entity row {Row}: Id={Id}, FullName={FullName}, CleanName={CleanName}, Type={TypeByte}", rows, id, fullName, cleanName, typeByte);
+            
             // Determine entity type
             string entityType;
             string? parentTopic = null;
@@ -84,6 +100,7 @@ public class AsbEmulatorSqlEntityRepository
             });
         }
 
+        _logger.LogInformation("Entity lookup complete. Found {Count} rows, returning {ResultCount} entities.", rows, results.Count);
         return results;
     }
 
