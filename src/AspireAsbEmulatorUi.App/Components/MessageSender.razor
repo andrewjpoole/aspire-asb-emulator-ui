@@ -73,6 +73,7 @@
             OnPropertiesChanged="StateHasChanged" />
     </div>
 
+
     <div class="mt-6 pt-4 border-t border-slate-700 flex items-center gap-2">
         <div class="flex rounded bg-slate-700 p-1">
             <button class=@($"px-3 py-1 rounded-l text-sm {(!_sendMultiple ? "bg-slate-600 text-white" : "text-slate-200")}") type="button" @onclick="() => _sendMultiple = false">Single</button>
@@ -153,6 +154,7 @@
 
     private List<BrokerPropertiesEditor.PropertyItem> _brokerProperties = new();
     private List<ApplicationPropertiesEditor.PropertyItem> _appProperties = new();
+    
 
     private bool _confirmEmpty = false;
     private bool _showSaveDialog = false;
@@ -167,7 +169,10 @@
     protected override void OnParametersSet()
     {
         LoadAvailableCannedMessages();
+        EnsureDefaultMessageIdExists();
     }
+
+    
 
     private void LoadAvailableCannedMessages()
     {
@@ -349,6 +354,7 @@
                 }
 
                 _result = $"Loaded canned message: {actualScenarioName} (from {entityKey})";
+                EnsureDefaultMessageIdExists();
                 StateHasChanged();
             }
         }
@@ -371,10 +377,23 @@
         
         _appProperties.Clear();
         _brokerProperties.Clear();
+        EnsureDefaultMessageIdExists();
         _selectedCannedMessage = string.Empty;
         _result = string.Empty;
-        
+
         StateHasChanged();
+    }
+
+    private void EnsureDefaultMessageIdExists()
+    {
+        if (!_brokerProperties.Any(p => string.Equals(p.Key, "MessageId", StringComparison.OrdinalIgnoreCase)))
+        {
+            _brokerProperties.Insert(0, new BrokerPropertiesEditor.PropertyItem
+            {
+                Key = "MessageId",
+                Value = Guid.NewGuid().ToString()
+            });
+        }
     }
 
     private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
@@ -435,7 +454,20 @@
             _confirmEmpty = true;
             return;
         }
-        
+        // Prevent send when there are unsaved edits in application or broker properties
+        if (_appProperties.Any(p => p.IsEditing) || _brokerProperties.Any(p => p.IsEditing))
+        {
+            _result = "Cannot send: there are unsaved property edits. Save or cancel them before sending.";
+            return;
+        }
+        // Validate for duplicate application property keys
+        var duplicateKey = GetDuplicateApplicationKey();
+        if (!string.IsNullOrEmpty(duplicateKey))
+        {
+            _result = $"Cannot send: duplicate application property key '{duplicateKey}' present.";
+            return;
+        }
+
         await Send();
     }
 
@@ -472,9 +504,18 @@
 
             if (!string.IsNullOrWhiteSpace(ct)) brokerProps["ContentType"] = ct;
 
+            // Determine if user explicitly provided a MessageId
+            var userProvidedMessageId = brokerProps.TryGetValue("MessageId", out var providedMid) && !string.IsNullOrWhiteSpace(providedMid?.ToString());
+
             int count = _sendMultiple ? Math.Max(1, _messageCount) : 1;
             for (int i = 0; i < count; i++)
             {
+                // If user didn't specify MessageId, generate a new Guid per message
+                if (!userProvidedMessageId)
+                {
+                    brokerProps["MessageId"] = Guid.NewGuid().ToString();
+                }
+
                 await Bus.SendMessageAsync(SelectedEntity, processedBody, appProps, brokerProps);
             }
             _result = $"Sent {count} message{(count > 1 ? "s" : "")} at {DateTime.Now:HH:mm:ss}";
@@ -492,6 +533,18 @@
         {
             _result = $"Error: {ex.Message}";
         }
+    }
+
+    private string? GetDuplicateApplicationKey()
+    {
+        var groups = _appProperties
+            .Where(p => !string.IsNullOrWhiteSpace(p.Key))
+            .GroupBy(p => p.Key, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        return groups.FirstOrDefault();
     }
 
     private void SaveAsCannedMessage()

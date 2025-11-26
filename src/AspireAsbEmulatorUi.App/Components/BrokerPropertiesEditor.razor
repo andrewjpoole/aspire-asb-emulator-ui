@@ -8,104 +8,133 @@
             var idx = kv.i;
             var key = Properties[idx].Key;
             EnsureTtlState(idx);
-            <div class="flex gap-2">
-                <div class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1.5 rounded w-48 font-medium">@key</div>
-                @if (BrokerKeyKinds.TryGetValue(key, out var existingKind) && existingKind == BrokerValueKind.DateTime)
+            <div class="flex gap-2 items-center">
+                @if (Properties[idx].IsEditing)
                 {
-                    <input type="datetime-local" 
-                           class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
-                           value="@GetDateTimeLocalValue(Properties[idx].Value)" 
-                           @onchange="(e) => OnExistingDateChanged(idx, e)" />
-                }
-                else if (existingKind == BrokerValueKind.TimeSpan)
-                {
-                    <input type="number" min="0" step="1" default="5" 
-                           class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-32" 
-                           value="@_existingTtlNumber[idx]" 
-                           @onchange="(e) => OnExistingTtlNumberChanged(idx, e)" />
-                    <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" 
-                            value="@_existingTtlUnit[idx]" 
-                            @onchange="(e) => OnExistingTtlUnitChanged(idx, e)">
-                        <option value="Seconds">Seconds</option>
-                        <option value="Minutes">Minutes</option>
-                        <option value="Hours">Hours</option>
-                        <option value="Days">Days</option>
+                    <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-48" 
+                            @bind="Properties[idx].Key">
+                        @foreach (var opt in BrokerKeyKinds.Keys)
+                        {
+                            <option value="@opt">@opt</option>
+                        }
                     </select>
-                }
-                else if (existingKind == BrokerValueKind.GuidString)
-                {
-                    <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
-                           @bind="Properties[idx].Value" />
-                    <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500" 
-                            @onclick="() => GenerateGuidForExisting(idx)" 
-                            title="Populate property with new Guid">+</button>
+
+                    @if (BrokerKeyKinds.TryGetValue(Properties[idx].Key, out var editKind) && editKind == BrokerValueKind.DateTime)
+                    {
+                        <input type="datetime-local" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                               @bind="_editDateTimeValue" />
+                    }
+                    else if (BrokerKeyKinds.TryGetValue(Properties[idx].Key, out editKind) && editKind == BrokerValueKind.TimeSpan)
+                    {
+                        <input type="number" min="0" step="1" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-32" 
+                               @bind="_editTtlNumber" />
+                        <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" 
+                                @bind="_editTtlUnit">
+                            <option value="Seconds">Seconds</option>
+                            <option value="Minutes">Minutes</option>
+                            <option value="Hours">Hours</option>
+                            <option value="Days">Days</option>
+                        </select>
+                    }
+                    else if (BrokerKeyKinds.TryGetValue(Properties[idx].Key, out editKind) && editKind == BrokerValueKind.GuidString)
+                    {
+                        <input placeholder="value" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                               @bind="Properties[idx].Value" />
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500" 
+                                @onclick="() => GenerateGuidForExisting(idx)" 
+                                title="Populate property with new Guid">+</button>
+                    }
+                    else
+                    {
+                        <input placeholder="value" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                               @bind="Properties[idx].Value" />
+                    }
+
+                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
+                            @onclick="() => SaveBrokerRow(idx)">Save</button>
+                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
+                            @onclick="() => CancelBrokerEdit(idx)">Cancel</button>
                 }
                 else
                 {
-                    <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
-                           @bind="Properties[idx].Value" />
+                    <div class="bg-slate-800 border border-slate-700 text-slate-100 px-3 py-1.5 rounded w-48 font-medium">@key</div>
+                    <div class="flex-1 truncate">@Properties[idx].Value</div>
+                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
+                            @onclick="() => EditBrokerRow(idx)">Edit</button>
+                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
+                            @onclick="() => RemoveProperty(idx)" 
+                            title="Remove this Broker property">Remove</button>
                 }
-                <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
-                        @onclick="() => RemoveProperty(idx)" 
-                        title="Remove this Broker property">Remove</button>
             </div>
         }
 
-        <div class="flex gap-2 items-center">
-            <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-48" 
-                    @bind="_newBrokerKeySelect">
-                @foreach (var opt in BrokerKeyKinds.Keys)
+        <div class="flex justify-between items-center">
+            <div>
+                <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600" @onclick="AddRowBroker">Add</button>
+            </div>
+            <div class="flex gap-2 items-center" style="min-width:40%">
+                @if (_showNewBrokerInputs)
                 {
-                    <option value="@opt">@opt</option>
+                    <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-48" 
+                        @bind="_newBrokerKeySelect" @ref="_newBrokerKeyRef">
+                        @foreach (var opt in BrokerKeyKinds.Keys)
+                        {
+                            <option value="@opt">@opt</option>
+                        }
+                    </select>
+
+                    @if (BrokerKeyKinds.TryGetValue(_newBrokerKeySelect, out var nbKind) && nbKind == BrokerValueKind.DateTime)
+                    {
+                        <input type="datetime-local" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                               @bind="_newBrokerDateTimeLocal" />
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" 
+                                @onclick="() => SetScheduleTime(1)" 
+                                title="Set to 1 minute from now">+1m</button>
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" 
+                                @onclick="() => SetScheduleTime(5)" 
+                                title="Set to 5 minutes from now">+5m</button>
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" 
+                                @onclick="() => SetScheduleTime(60)" 
+                                title="Set to 1 hour from now">+1hr</button>
+                    }
+                    else if (BrokerKeyKinds.TryGetValue(_newBrokerKeySelect, out nbKind) && nbKind == BrokerValueKind.TimeSpan)
+                    {
+                        <input type="number" min="0" step="1" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-32" 
+                               @bind="_newBrokerTtlNumber" />
+                        <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" 
+                                @bind="_newBrokerTtlUnit">
+                            <option value="Seconds">Seconds</option>
+                            <option value="Minutes">Minutes</option>
+                            <option value="Hours">Hours</option>
+                            <option value="Days">Days</option>
+                        </select>
+                    }
+                    else if (BrokerKeyKinds.TryGetValue(_newBrokerKeySelect, out nbKind) && nbKind == BrokerValueKind.GuidString)
+                    {
+                        <input placeholder="value" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                               @bind="_newBrokerValue" />
+                        <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500" 
+                                @onclick="GenerateGuidForNew" 
+                                title="Populate with new Guid">+</button>
+                    }
+                    else
+                    {
+                        <input placeholder="value" 
+                               class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                               @bind="_newBrokerValue" />
+                    }
+
+                        <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" 
+                            @onclick="CancelAddNewBroker">Cancel</button>
                 }
-            </select>
-
-            @if (BrokerKeyKinds.TryGetValue(_newBrokerKeySelect, out var nbKind) && nbKind == BrokerValueKind.DateTime)
-            {
-                <input type="datetime-local" 
-                       class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
-                       @bind="_newBrokerDateTimeLocal" />
-                <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" 
-                        @onclick="() => SetScheduleTime(1)" 
-                        title="Set to 1 minute from now">+1m</button>
-                <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" 
-                        @onclick="() => SetScheduleTime(5)" 
-                        title="Set to 5 minutes from now">+5m</button>
-                <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500 whitespace-nowrap" 
-                        @onclick="() => SetScheduleTime(60)" 
-                        title="Set to 1 hour from now">+1hr</button>
-            }
-            else if (BrokerKeyKinds.TryGetValue(_newBrokerKeySelect, out nbKind) && nbKind == BrokerValueKind.TimeSpan)
-            {
-                <input type="number" min="0" step="1" 
-                       class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-32" 
-                       @bind="_newBrokerTtlNumber" />
-                <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-36" 
-                        @bind="_newBrokerTtlUnit">
-                    <option value="Seconds">Seconds</option>
-                    <option value="Minutes">Minutes</option>
-                    <option value="Hours">Hours</option>
-                    <option value="Days">Days</option>
-                </select>
-            }
-            else if (BrokerKeyKinds.TryGetValue(_newBrokerKeySelect, out nbKind) && nbKind == BrokerValueKind.GuidString)
-            {
-                <input placeholder="value" 
-                       class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
-                       @bind="_newBrokerValue" />
-                <button class="px-2 py-1 rounded bg-slate-600 text-slate-100 hover:bg-slate-500" 
-                        @onclick="GenerateGuidForNew" 
-                        title="Populate with new Guid">+</button>
-            }
-            else
-            {
-                <input placeholder="value" 
-                       class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
-                       @bind="_newBrokerValue" />
-            }
-
-            <button class="px-2 py-1 rounded bg-slate-700 text-slate-100 hover:bg-slate-600" 
-                    @onclick="AddProperty">Add</button>
+            </div>
         </div>
     </div>
 </div>
@@ -120,6 +149,9 @@
     { 
         public string Key { get; set; } = string.Empty; 
         public string Value { get; set; } = string.Empty; 
+        public bool IsEditing { get; set; } = false;
+        public string? OriginalKey { get; set; }
+        public string? OriginalValue { get; set; }
     }
 
     public enum BrokerValueKind { String, GuidString, DateTime, TimeSpan }
@@ -144,6 +176,12 @@
     private DateTime? _newBrokerDateTimeLocal;
     private double _newBrokerTtlNumber = 0;
     private string _newBrokerTtlUnit = "Seconds";
+    private bool _showNewBrokerInputs = false;
+    private ElementReference _newBrokerKeyRef;
+    private string _editTtlUnit = "Seconds";
+    private double _editTtlNumber = 0;
+    private DateTime? _editDateTimeValue = null;
+    private string _editGuidValue = string.Empty;
 
     private List<double> _existingTtlNumber = new();
     private List<string> _existingTtlUnit = new();
@@ -235,6 +273,64 @@
         _newBrokerValue = Guid.NewGuid().ToString();
     }
 
+    private void AddRowBroker()
+    {
+        var item = new PropertyItem { IsEditing = true }; 
+        Properties.Add(item);
+    }
+
+    private void EditBrokerRow(int idx)
+    {
+        if (idx < 0 || idx >= Properties.Count) return;
+        var p = Properties[idx];
+        p.OriginalKey = p.Key;
+        p.OriginalValue = p.Value;
+        p.IsEditing = true;
+        // populate edit helpers as needed
+        if (BrokerKeyKinds.TryGetValue(p.Key, out var kind) && kind == BrokerValueKind.TimeSpan)
+        {
+            if (double.TryParse(p.Value, out var seconds)) { _editTtlNumber = seconds; _editTtlUnit = "Seconds"; }
+        }
+        else if (BrokerKeyKinds.TryGetValue(p.Key, out kind) && kind == BrokerValueKind.DateTime)
+        {
+            if (DateTimeOffset.TryParse(p.Value, out var dto)) _editDateTimeValue = dto.DateTime;
+        }
+    }
+
+    private void CancelBrokerEdit(int idx)
+    {
+        if (idx < 0 || idx >= Properties.Count) return;
+        var p = Properties[idx];
+        if (string.IsNullOrEmpty(p.OriginalKey) && string.IsNullOrEmpty(p.OriginalValue))
+        {
+            Properties.RemoveAt(idx);
+        }
+        else
+        {
+            p.Key = p.OriginalKey ?? string.Empty;
+            p.Value = p.OriginalValue ?? string.Empty;
+            p.IsEditing = false;
+        }
+    }
+
+    private async Task SaveBrokerRow(int idx)
+    {
+        if (idx < 0 || idx >= Properties.Count) return;
+        var p = Properties[idx];
+        if (BrokerKeyKinds.TryGetValue(p.Key, out var k) && k == BrokerValueKind.TimeSpan)
+        {
+            p.Value = _editTtlNumber.ToString();
+        }
+        else if (k == BrokerValueKind.DateTime)
+        {
+            if (_editDateTimeValue.HasValue) p.Value = new DateTimeOffset(_editDateTimeValue.Value).ToString("o");
+        }
+        p.IsEditing = false;
+        p.OriginalKey = null;
+        p.OriginalValue = null;
+        await OnPropertiesChanged.InvokeAsync();
+    }
+
     private void SetScheduleTime(int minutes)
     {
         _newBrokerDateTimeLocal = DateTime.Now.AddMinutes(minutes);
@@ -292,8 +388,23 @@
             _newBrokerKeySelect = nextAvailable;
         }
 
+        _showNewBrokerInputs = false;
+        _newBrokerValue = string.Empty;
+        _newBrokerDateTimeLocal = null;
+        _newBrokerTtlNumber = 0;
+        _newBrokerTtlUnit = "Seconds";
+
         await OnPropertiesChanged.InvokeAsync();
     }
+
+    private async Task ShowAddNewBroker()
+    {
+        _showNewBrokerInputs = true;
+        await Task.Yield();
+        try { await _newBrokerKeyRef.FocusAsync(); } catch { }
+    }
+
+    
 
     private async Task RemoveProperty(int idx)
     {
@@ -302,5 +413,15 @@
             Properties.RemoveAt(idx);
             await OnPropertiesChanged.InvokeAsync();
         }
+    }
+
+    private Task CancelAddNewBroker()
+    {
+        _showNewBrokerInputs = false;
+        _newBrokerValue = string.Empty;
+        _newBrokerDateTimeLocal = null;
+        _newBrokerTtlNumber = 0;
+        _newBrokerTtlUnit = "Seconds";
+        return Task.CompletedTask;
     }
 }
