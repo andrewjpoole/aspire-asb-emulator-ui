@@ -52,15 +52,25 @@
             <h2 class="text-xl font-semibold mb-4">Content Types</h2>
             <p class="text-sm text-slate-400 mb-3">Define which content types should be available in the dropdown when sending messages and which one should be the default.</p>
             <div class="space-y-2">
-                @foreach (var ct in _settings.ContentTypes.Select((v, i) => (v, i)))
+                @foreach (var item in _contentTypes)
                 {
                     <div class="flex gap-2 items-center">
-                        <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_settings.ContentTypes[ct.i]" />
-                        <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveContentType(ct.i)">Remove</button>
+                        @if (item.IsEditing)
+                        {
+                            <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                                   @bind="item.Value" placeholder="Content Type" />
+                            <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="() => SaveContentType(item)">Save</button>
+                            <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => CancelContentType(item)">Cancel</button>
+                        }
+                        else
+                        {
+                            <div class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded">@item.Value</div>
+                            <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => EditContentType(item)">Edit</button>
+                            <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveContentType(item)">Remove</button>
+                        }
                     </div>
                 }
-                <div class="flex gap-2 items-center">
-                    <input placeholder="New content type" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newContentType" />
+                <div class="flex justify-end">
                     <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddContentType">Add</button>
                 </div>
             </div>
@@ -81,19 +91,30 @@
             <h2 class="text-xl font-semibold mb-4">Common Application Properties</h2>
             <p class="text-sm text-slate-400 mb-3">Add frequently used application properties. Multiple properties with the same name are allowed.</p>
             <div class="space-y-2">
-                @foreach (var prop in _settings.CommonApplicationProperties.Select((kv, i) => (kv, i)))
+                @foreach (var item in _commonProperties)
                 {
                     <div class="flex gap-2 items-center">
-                        <input class="w-1/3 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
-                               value="@prop.kv.Key" readonly title="Property name" />
-                        <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
-                               value="@prop.kv.Value" readonly title="Property value" />
-                        <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveCommonProperty(prop.i)">Remove</button>
+                        @if (item.IsEditing)
+                        {
+                            <input class="w-1/3 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                                   @bind="item.Key" placeholder="Property name" />
+                            <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                                   @bind="item.Value" placeholder="Property value" />
+                            <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="() => SaveCommonProperty(item)">Save</button>
+                            <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => CancelCommonProperty(item)">Cancel</button>
+                        }
+                        else
+                        {
+                            <input class="w-1/3 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                                   value="@item.Key" readonly title="Property name" />
+                            <input class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" 
+                                   value="@item.Value" readonly title="Property value" />
+                            <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => EditCommonProperty(item)">Edit</button>
+                            <button class="px-3 py-2 rounded border border-slate-600 text-slate-100 hover:bg-slate-700" @onclick="() => RemoveCommonProperty(item)">Remove</button>
+                        }
                     </div>
                 }
-                <div class="flex gap-2 items-center">
-                    <input placeholder="Property name" class="w-1/3 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newCommonPropKey" />
-                    <input placeholder="Property value" class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newCommonPropValue" />
+                <div class="flex justify-end">
                     <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddCommonProperty">Add</button>
                 </div>
             </div>
@@ -208,19 +229,38 @@
                         }
                         
                         <div class="mt-2">
-                            @if (!_newScenarioNames.ContainsKey(entity.Key))
+                            @if (_addingScenarioForEntity == entity.Key)
                             {
-                                _newScenarioNames[entity.Key] = string.Empty;
+                                <div class="flex gap-2 items-center">
+                                    <input placeholder="New scenario name" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm flex-1" 
+                                           @bind="_newScenarioNames[entity.Key]" />
+                                    <button class="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm" @onclick="() => SaveNewScenario(entity.Key)">Save</button>
+                                    <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-700 text-sm" @onclick="CancelAddScenario">Cancel</button>
+                                </div>
                             }
-                            <input placeholder="New scenario name" class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded text-sm" 
-                                   @bind="_newScenarioNames[entity.Key]" />
-                            <button class="ml-2 px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm" @onclick="() => AddScenario(entity.Key)">Add Scenario</button>
+                            else
+                            {
+                                <button class="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm" @onclick="() => AddScenario(entity.Key)">Add Scenario</button>
+                            }
                         </div>
                     </div>
                 }
                 
-                <div class="flex gap-2">
-                    <input placeholder="Enter an ASB Entity name, use * wildcard to match multiple..." class="flex-1 bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded" @bind="_newEntityName" />
+                @if (_isAddingEntity)
+                {
+                    <div class="bg-slate-700 rounded p-4 mb-4">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm text-slate-400">Entity:</span>
+                            <input class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded flex-1" 
+                                   @bind="_addEntityNameValue" 
+                                   placeholder="Entity name" />
+                            <button class="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm" @onclick="SaveNewEntity">Save</button>
+                            <button class="px-2 py-1 rounded border border-slate-600 text-slate-100 hover:bg-slate-600 text-sm" @onclick="CancelAddEntity">Cancel</button>
+                        </div>
+                    </div>
+                }
+                
+                <div class="flex justify-end">
                     <button class="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" @onclick="AddEntity">Add Entity</button>
                 </div>
             </div>
@@ -308,10 +348,29 @@
     private AspireAsbEmulatorUi.Models.Settings _settings = new();
     private string _message = string.Empty;
     
-    private string _newContentType = string.Empty;
-    private string _newCommonPropKey = string.Empty;
-    private string _newCommonPropValue = string.Empty;
-    private string _newEntityName = string.Empty;
+    // View models for editing
+    public class ContentTypeItem
+    {
+        public string Value { get; set; } = string.Empty;
+        public bool IsEditing { get; set; }
+        public string OriginalValue { get; set; } = string.Empty;
+    }
+
+    public class CommonPropertyItem
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+        public bool IsEditing { get; set; }
+        public string OriginalKey { get; set; } = string.Empty;
+        public string OriginalValue { get; set; } = string.Empty;
+    }
+
+    private List<ContentTypeItem> _contentTypes = new();
+    private List<CommonPropertyItem> _commonProperties = new();
+    private bool _isAddingEntity = false;
+    private string _addEntityNameValue = string.Empty;
+    private string? _addingScenarioForEntity = null;
+
     private Dictionary<string, string> _newScenarioNames = new();
     
     private HashSet<string> _expandedScenarios = new();
@@ -344,6 +403,15 @@
     protected override void OnInitialized()
     {
         _settings = SettingsService.GetSettings();
+        
+        _contentTypes = _settings.ContentTypes
+            .Select(c => new ContentTypeItem { Value = c, IsEditing = false })
+            .ToList();
+            
+        _commonProperties = _settings.CommonApplicationProperties
+            .Select(kv => new CommonPropertyItem { Key = kv.Key, Value = kv.Value, IsEditing = false })
+            .ToList();
+            
         InitializePropertyLists();
     }
 
@@ -561,27 +629,7 @@
         _editingScenarioKey = string.Empty;
         _modalEditingEntityName = string.Empty;
         _modalEditingScenarioName = string.Empty;
-    }
-
-    private List<ApplicationPropertiesEditor.PropertyItem> GetAppPropertiesList(string entityName, string scenarioName)
-    {
-        var key = $"{entityName}:{scenarioName}";
-        if (!_appPropsLists.ContainsKey(key))
-        {
-            _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
-        }
-        return _appPropsLists[key];
-    }
-
-    private List<BrokerPropertiesEditor.PropertyItem> GetBrokerPropertiesList(string entityName, string scenarioName)
-    {
-        var key = $"{entityName}:{scenarioName}";
-        if (!_brokerPropsLists.ContainsKey(key))
-        {
-            _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
-        }
-        return _brokerPropsLists[key];
-    }
+    }    
 
     private void SaveAppPropertiesFromList(string entityName, string scenarioName)
     {
@@ -696,6 +744,12 @@
 
     private async Task SaveSettings()
     {
+        // Sync lists back to settings
+        _settings.ContentTypes = _contentTypes.Select(c => c.Value).ToList();
+        _settings.CommonApplicationProperties = _commonProperties
+            .Select(p => new KeyValuePair<string, string>(p.Key, p.Value))
+            .ToList();
+
         // Save property lists back to the settings
         foreach (var entity in _settings.CannedMessages)
         {
@@ -766,54 +820,110 @@
     // Content Types
     private void AddContentType()
     {
-        if (!string.IsNullOrWhiteSpace(_newContentType) && !_settings.ContentTypes.Contains(_newContentType))
-        {
-            _settings.ContentTypes.Add(_newContentType);
-            _newContentType = string.Empty;
-            StateHasChanged();
-        }
+        _contentTypes.Add(new ContentTypeItem { IsEditing = true });
     }
 
-    private void RemoveContentType(int index)
+    private void SaveContentType(ContentTypeItem item)
     {
-        if (index >= 0 && index < _settings.ContentTypes.Count)
+        if (string.IsNullOrWhiteSpace(item.Value)) return;
+        // Check duplicates
+        if (_contentTypes.Count(c => c != item && c.Value == item.Value) > 0)
         {
-            _settings.ContentTypes.RemoveAt(index);
-            StateHasChanged();
+            // Could show error here
+            return;
         }
+        item.IsEditing = false;
+    }
+
+    private void CancelContentType(ContentTypeItem item)
+    {
+        if (string.IsNullOrEmpty(item.OriginalValue) && string.IsNullOrEmpty(item.Value) && item.IsEditing)
+        {
+            _contentTypes.Remove(item);
+        }
+        else
+        {
+            item.Value = item.OriginalValue;
+            item.IsEditing = false;
+        }
+    }
+    
+    private void EditContentType(ContentTypeItem item)
+    {
+        item.OriginalValue = item.Value;
+        item.IsEditing = true;
+    }
+
+    private void RemoveContentType(ContentTypeItem item)
+    {
+        _contentTypes.Remove(item);
     }
 
     // Common Properties
     private void AddCommonProperty()
     {
-        if (!string.IsNullOrWhiteSpace(_newCommonPropKey))
+        _commonProperties.Add(new CommonPropertyItem { IsEditing = true });
+    }
+    
+    private void SaveCommonProperty(CommonPropertyItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.Key)) return;
+        item.IsEditing = false;
+    }
+    
+    private void CancelCommonProperty(CommonPropertyItem item)
+    {
+        if (string.IsNullOrEmpty(item.OriginalKey) && string.IsNullOrEmpty(item.Key) && item.IsEditing)
         {
-            _settings.CommonApplicationProperties.Add(new KeyValuePair<string, string>(_newCommonPropKey, _newCommonPropValue ?? string.Empty));
-            _newCommonPropKey = string.Empty;
-            _newCommonPropValue = string.Empty;
-            StateHasChanged();
+            _commonProperties.Remove(item);
+        }
+        else
+        {
+            item.Key = item.OriginalKey;
+            item.Value = item.OriginalValue;
+            item.IsEditing = false;
         }
     }
-
-    private void RemoveCommonProperty(int index)
+    
+    private void EditCommonProperty(CommonPropertyItem item)
     {
-        if (index >= 0 && index < _settings.CommonApplicationProperties.Count)
-        {
-            _settings.CommonApplicationProperties.RemoveAt(index);
-            StateHasChanged();
-        }
+        item.OriginalKey = item.Key;
+        item.OriginalValue = item.Value;
+        item.IsEditing = true;
+    }
+
+    private void RemoveCommonProperty(CommonPropertyItem item)
+    {
+        _commonProperties.Remove(item);
     }
 
     // Entities
     private void AddEntity()
     {
-        if (!string.IsNullOrWhiteSpace(_newEntityName) && !_settings.CannedMessages.ContainsKey(_newEntityName))
+        _isAddingEntity = true;
+        _addEntityNameValue = string.Empty;
+    }
+    
+    private void CancelAddEntity()
+    {
+        _isAddingEntity = false;
+        _addEntityNameValue = string.Empty;
+    }
+    
+    private void SaveNewEntity()
+    {
+        if (string.IsNullOrWhiteSpace(_addEntityNameValue)) return;
+        if (_settings.CannedMessages.ContainsKey(_addEntityNameValue))
         {
-            _settings.CannedMessages[_newEntityName] = new Dictionary<string, CannedMessage>();
-            _newScenarioNames[_newEntityName] = string.Empty;
-            _newEntityName = string.Empty;
-            StateHasChanged();
+            _message = $"Entity '{_addEntityNameValue}' already exists";
+            return;
         }
+        
+        _settings.CannedMessages[_addEntityNameValue] = new Dictionary<string, CannedMessage>();
+        _newScenarioNames[_addEntityNameValue] = string.Empty;
+        _isAddingEntity = false;
+        _addEntityNameValue = string.Empty;
+        StateHasChanged();
     }
 
     private void RemoveEntity(string entityName)
@@ -835,11 +945,34 @@
     // Scenarios
     private void AddScenario(string entityName)
     {
-        if (_newScenarioNames.TryGetValue(entityName, out var scenarioName) && 
-            !string.IsNullOrWhiteSpace(scenarioName) && 
-            _settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
-            !scenarios.ContainsKey(scenarioName))
+        _addingScenarioForEntity = entityName;
+        if (!_newScenarioNames.ContainsKey(entityName))
         {
+            _newScenarioNames[entityName] = string.Empty;
+        }
+        else 
+        {
+            _newScenarioNames[entityName] = string.Empty;
+        }
+    }
+    
+    private void CancelAddScenario()
+    {
+        _addingScenarioForEntity = null;
+    }
+    
+    private void SaveNewScenario(string entityName)
+    {
+        if (!_newScenarioNames.TryGetValue(entityName, out var scenarioName) || string.IsNullOrWhiteSpace(scenarioName)) return;
+        
+        if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios))
+        {
+            if (scenarios.ContainsKey(scenarioName))
+            {
+                _message = $"Scenario '{scenarioName}' already exists";
+                return;
+            }
+            
             var newMsg = new CannedMessage
             {
                 ContentType = _settings.DefaultContentType,
@@ -849,17 +982,18 @@
             };
             
             scenarios[scenarioName] = newMsg;
-            _newScenarioNames[entityName] = string.Empty;
             
             // Initialize empty property lists for the new scenario
             var key = $"{entityName}:{scenarioName}";
             _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
             _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
             
+            _addingScenarioForEntity = null;
+            _newScenarioNames[entityName] = string.Empty;
             StateHasChanged();
         }
     }
-
+    
     private void RemoveScenario(string entityName, string scenarioName)
     {
         if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios))
