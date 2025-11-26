@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.13</Version>
+	<Version>1.0.14</Version>
 	<PackageReleaseNotes>
+		1.0.14 Add support for container connectivity using podman
 		1.0.13 Added logging to entity discovery
 		1.0.10 add support for entity names containing periods
 		1.0.9 Tie extension method to specific docker image tag

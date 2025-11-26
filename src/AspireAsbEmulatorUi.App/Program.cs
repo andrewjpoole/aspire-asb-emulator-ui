@@ -46,6 +46,8 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
                 // Fallbacks useful for local/dev/container scenarios
                 candidates.Add("127.0.0.1");
                 candidates.Add("host.docker.internal");
+                // Podman on some systems exposes host via host.containers.internal
+                candidates.Add("host.containers.internal");
 
                 string selectedHost = candidates.First();
                 foreach (var candidate in candidates)
