@@ -29,12 +29,16 @@ public class AsbEmulatorSqlEntityRepository
         }
 
         using var conn = new SqlConnection(_connectionString);
+        
         try
         {
             _logger.LogInformation("Opening SQL connection to retrieve ASB emulator entities.");
+            await conn.OpenAsync(cancellationToken);
         }
-        catch { }
-        await conn.OpenAsync(cancellationToken);
+        catch(Exception ex)
+        {
+            _logger.LogError(ex, "Error opening SQL connection {errorMessage}", ex.Message);
+        }
 
         var cmd = conn.CreateCommand();
         cmd.CommandText = @"SELECT 

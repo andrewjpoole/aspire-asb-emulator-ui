@@ -8,9 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.11</Version>
+	<Version>1.0.12</Version>
 	<PackageReleaseNotes>
-		1.0.11 Added logging to entity discovery
+		1.0.12 Added logging to entity discovery
 		1.0.10 add support for entity names containing periods
 		1.0.9 Tie extension method to specific docker image tag
 		1.0.6 add semver tag to docker image build workflow and AddAsbEmulatorUI() extension method
