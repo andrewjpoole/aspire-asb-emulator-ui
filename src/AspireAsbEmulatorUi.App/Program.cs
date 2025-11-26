@@ -2,6 +2,7 @@ using AspireAsbEmulatorUi.App.Components;
 using AspireAsbEmulatorUi.App.Services;
 using AspireAsbEmulatorUi.App.Api;
 using System.Net.Sockets;
+using System.Linq;
 using Microsoft.Data.SqlClient;
 using System.Text.RegularExpressions;
 
@@ -25,56 +26,72 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
         // Assemble connection string from port and password passed by AppHost
         var port = cfg["asb-sql-port"] ?? cfg["ASB_SQL_PORT"];
         var pwd = cfg["asb-sql-password"] ?? cfg["ASB_SQL_PASSWORD"];
+        var asbEmulatorSqlServer = cfg["ASB_EMULATOR_SQLSERVER"];
 
-        if (!string.IsNullOrWhiteSpace(port) && !string.IsNullOrWhiteSpace(pwd))
+        if (!string.IsNullOrWhiteSpace(pwd) && (!string.IsNullOrWhiteSpace(port) || !string.IsNullOrWhiteSpace(asbEmulatorSqlServer)))
         {
-                // Build a list of host candidates in priority order
-                var candidates = new List<string>();
+            // Build a list of host candidates in priority order (host + optional per-candidate port)
+            var candidates = new List<(string Host, string? Port)>();
 
-                // Prefer an explicit host provided by the hosting resource (exposed via environment variable)
-                var explicitHost = cfg["asb-sql-host"] ?? cfg["ASB_SQL_HOST"];
-                if (!string.IsNullOrWhiteSpace(explicitHost))
+            // If hosting provided ASB_EMULATOR_SQLSERVER (format host:port), prefer that and use its port
+            if (!string.IsNullOrWhiteSpace(asbEmulatorSqlServer))
+            {
+                var parts = asbEmulatorSqlServer.Split(':', 2);
+                var h = parts[0];
+                string? p = parts.Length > 1 ? parts[1] : null;
+                candidates.Add((h, p));
+            }
+
+            // Prefer an explicit host provided by the hosting resource (exposed via environment variable)
+            var explicitHost = cfg["asb-sql-host"] ?? cfg["ASB_SQL_HOST"];
+            if (!string.IsNullOrWhiteSpace(explicitHost))
+            {
+                candidates.Add((explicitHost, null));
+            }
+
+            // Try service-name-based host (the hosting extension names the SQL container as `{resourceName}-mssql`)
+            var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(resourceName))
+            {
+                candidates.Add(($"{resourceName}-mssql", null));
+            }
+
+            // Fallbacks useful for local/dev/container scenarios
+            candidates.Add(("host.docker.internal", null)); // from within docker container on dockerdesktop
+            candidates.Add(("host.containers.internal", null)); // from within diocker container on podman
+            candidates.Add(("127.0.0.1", null));
+
+            string selectedHost = candidates.First().Host;
+            string selectedConn = string.Empty;
+            foreach (var candidate in candidates)
+            {
+                var candidatePort = candidate.Port ?? port;
+                var candidateConn = $"Server={candidate.Host},{candidatePort};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
+                // Mask the password for logging
+                var masked = Regex.Replace(candidateConn, "(?i)(Password|Pwd)=[^;]+", "$1=****");
+                logger.LogInformation("Probing SQL candidate: {Candidate}", masked);
+                if (TrySqlConnect(candidateConn, 1500, out var error))
                 {
-                    candidates.Add(explicitHost);
+                    logger.LogInformation("SQL candidate succeeded");
+                    selectedHost = candidate.Host + (candidate.Port != null ? ":" + candidate.Port : string.Empty);
+                    selectedConn = candidateConn;
+                    break;
                 }
-
-                // Try service-name-based host (the hosting extension names the SQL container as `{resourceName}-mssql`)
-                var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(resourceName))
+                else
                 {
-                    candidates.Add($"{resourceName}-mssql");
+                    logger.LogDebug(error ?? "Unknown error", Array.Empty<object>());
+                    logger.LogInformation("SQL candidate failed");
                 }
+            }
 
-                // Fallbacks useful for local/dev/container scenarios
-                candidates.Add("host.docker.internal"); // from within docker container on dockerdesktop
-                candidates.Add("host.containers.internal"); // from within diocker container on podman
-                candidates.Add("127.0.0.1");
+            if (string.IsNullOrEmpty(selectedConn))
+            {
+                var tried = string.Join(", ", candidates.Select(c => c.Port != null ? $"{c.Host}:{c.Port}" : c.Host));
+                logger.LogError("No SQL candidate succeeded. Candidates tried: {Candidates}", tried);
+                throw new InvalidOperationException($"Could not connect to SQL server using any candidates: {tried}. Check asb-sql-host, asb-sql-port, and asb-sql-password settings.");
+            }
 
-                string selectedHost = candidates.First();
-                string selectedConn = string.Empty;
-                foreach (var candidate in candidates)
-                {
-                    var candidateConn = $"Server={candidate},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
-                    // Mask the password for logging
-                    var masked = Regex.Replace(candidateConn, "(?i)(Password|Pwd)=[^;]+", "$1=****");
-                    logger.LogInformation("Probing SQL candidate: {Candidate}", masked);
-                    if (TrySqlConnect(candidateConn, 1500, out var error))
-                    {
-                        logger.LogInformation("SQL candidate succeeded: {Candidate}", masked);
-                        selectedHost = candidate;
-                        selectedConn = candidateConn;
-                        break;
-                    }
-                    else
-                    {
-                        logger.LogDebug(error ?? "Unknown error", Array.Empty<object>());
-                        logger.LogInformation("SQL candidate failed: {Candidate}", masked);
-                    }
-                }
-
-                cs = string.IsNullOrEmpty(selectedConn)
-                    ? $"Server={selectedHost},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;"
-                    : selectedConn;
+            cs = selectedConn;
         }
     }
 

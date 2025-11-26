@@ -61,6 +61,7 @@ public static class AsbEmulatorUiResourceExtensions
             .WithHttpEndpoint(port: httpPort, targetPort: 8080)
             .WithReference(serviceBusResource)
             .WaitFor(serviceBusResource)
+            .WithLifetime(ContainerLifetime.Persistent) // This tells Aspire to add this container to a persistent network.
             .ExcludeFromManifest()
             .WithEnvironment(async (context) =>
             {
@@ -120,16 +121,30 @@ public static class AsbEmulatorUiResourceExtensions
             context.ExecutionContext,
             async (key, unprocessedValue, processedValue, exception) =>
             {
-                if (key != "MSSQL_SA_PASSWORD")
-                    return;
-
-                if (string.IsNullOrEmpty(processedValue))
+                // Capture SQL password
+                if (key == "MSSQL_SA_PASSWORD")
                 {
-                    context.Logger.LogError("MSSQL_SA_PASSWORD environment variable returned null or empty value.");
+                    if (string.IsNullOrEmpty(processedValue))
+                    {
+                        context.Logger.LogError("MSSQL_SA_PASSWORD environment variable returned null or empty value.");
+                    }
+                    else
+                    {
+                        context.EnvironmentVariables["asb-sql-password"] = processedValue;
+                    }
                     return;
                 }
 
-                context.EnvironmentVariables["asb-sql-password"] = processedValue;
+                // Capture raw SQL server identifier if present and expose to UI as ASB_EMULATOR_SQLSERVER
+                if (key == "SQL_SERVER")
+                {
+                    if (string.IsNullOrEmpty(processedValue) == false)
+                    {
+                        context.EnvironmentVariables["ASB_EMULATOR_SQLSERVER"] = processedValue;
+                        context.Logger.LogInformation("Exposed SQL_SERVER to UI as ASB_EMULATOR_SQLSERVER: {SqlServer}", processedValue);
+                    }
+                    return;
+                }
             },
             context.Logger,
             CancellationToken.None);        
