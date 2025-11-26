@@ -104,8 +104,10 @@
                                 
                                 <div class="@cardClass" @onclick="@(() => SelectEntity(e))">
                                     <div class="flex items-center justify-between">
-                                        <div class="font-medium text-slate-100">@e.DisplayName</div>
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex-1 min-w-0">
+                                            <div class="font-medium text-slate-100 break-words">@e.DisplayName</div>
+                                        </div>
+                                        <div class="flex items-center gap-2 flex-shrink-0">
                                             <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
                                                 <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
                                             </div>
@@ -147,8 +149,10 @@
                                 
                                 <div class="@topicCardClass" @onclick="@(() => SelectEntity(topic))">
                                     <div class="flex items-center justify-between">
-                                        <div class="font-medium text-slate-100">@topic.DisplayName</div>
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex-1 min-w-0">
+                                            <div class="font-medium text-slate-100 break-words">@topic.DisplayName</div>
+                                        </div>
+                                        <div class="flex items-center gap-2 flex-shrink-0">
                                             <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
                                                 <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@topic.ActiveMessageCount</span>
                                             </div>
@@ -173,20 +177,20 @@
 
                                             <div class="@subCardClass" @onclick="@(() => SelectEntity(sub))">
                                                 <div class="flex items-center justify-between">
-                                                    <div class="flex items-center gap-2">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                                        </svg>
-                                                        <span class="text-sm font-medium text-slate-200">@sub.DisplayName</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-2">
-                                                        <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
-                                                            <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@sub.ActiveMessageCount</span>
+                                                        <div class="flex items-center gap-2 flex-1 min-w-0">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-purple-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                            </svg>
+                                                            <span class="text-sm font-medium text-slate-200 break-words">@sub.DisplayName</span>
                                                         </div>
-                                                        <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
-                                                            <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@sub.DeadletterMessageCount</span>
+                                                        <div class="flex items-center gap-2 flex-shrink-0">
+                                                            <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
+                                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@sub.ActiveMessageCount</span>
+                                                            </div>
+                                                            <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
+                                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@sub.DeadletterMessageCount</span>
+                                                            </div>
                                                         </div>
-                                                    </div>
                                                 </div>
                                             </div>
                                         }
