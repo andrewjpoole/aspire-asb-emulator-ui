@@ -26,25 +26,38 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
 
         if (!string.IsNullOrWhiteSpace(port) && !string.IsNullOrWhiteSpace(pwd))
         {
-            // Try 127.0.0.1 first, then fall back to host.docker.internal (useful when running in containers)
-            string hostCandidate1 = "127.0.0.1";
-            string hostCandidate2 = "host.docker.internal";
-            string selectedHost = hostCandidate1;
-            if (!TryTcpConnect(hostCandidate1, port, 1500))
-            {
-                // attempt fallback
-                if (TryTcpConnect(hostCandidate2, port, 1500))
-                {
-                    selectedHost = hostCandidate2;
-                }
-                else
-                {
-                    // neither reachable; still use 127.0.0.1 to surface connection errors later
-                    selectedHost = hostCandidate1;
-                }
-            }
+                // Build a list of host candidates in priority order
+                var candidates = new List<string>();
 
-            cs = $"Server={selectedHost},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
+                // Prefer an explicit host provided by the hosting resource (exposed via environment variable)
+                var explicitHost = cfg["asb-sql-host"] ?? cfg["ASB_SQL_HOST"];
+                if (!string.IsNullOrWhiteSpace(explicitHost))
+                {
+                    candidates.Add(explicitHost);
+                }
+
+                // Try service-name-based host (the hosting extension names the SQL container as `{resourceName}-mssql`)
+                var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(resourceName))
+                {
+                    candidates.Add($"{resourceName}-mssql");
+                }
+
+                // Fallbacks useful for local/dev/container scenarios
+                candidates.Add("127.0.0.1");
+                candidates.Add("host.docker.internal");
+
+                string selectedHost = candidates.First();
+                foreach (var candidate in candidates)
+                {
+                    if (TryTcpConnect(candidate, port, 1500))
+                    {
+                        selectedHost = candidate;
+                        break;
+                    }
+                }
+
+                cs = $"Server={selectedHost},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
         }
     }
 
