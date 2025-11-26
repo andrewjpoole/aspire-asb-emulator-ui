@@ -2,6 +2,8 @@ using AspireAsbEmulatorUi.App.Components;
 using AspireAsbEmulatorUi.App.Services;
 using AspireAsbEmulatorUi.App.Api;
 using System.Net.Sockets;
+using Microsoft.Data.SqlClient;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,22 +46,35 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
                 }
 
                 // Fallbacks useful for local/dev/container scenarios
+                candidates.Add("host.docker.internal"); // from within docker container on dockerdesktop
+                candidates.Add("host.containers.internal"); // from within diocker container on podman
                 candidates.Add("127.0.0.1");
-                candidates.Add("host.docker.internal");
-                // Podman on some systems exposes host via host.containers.internal
-                candidates.Add("host.containers.internal");
 
                 string selectedHost = candidates.First();
+                string selectedConn = string.Empty;
                 foreach (var candidate in candidates)
                 {
-                    if (TryTcpConnect(candidate, port, 1500))
+                    var candidateConn = $"Server={candidate},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
+                    // Mask the password for logging
+                    var masked = Regex.Replace(candidateConn, "(?i)(Password|Pwd)=[^;]+", "$1=****");
+                    logger.LogInformation("Probing SQL candidate: {Candidate}", masked);
+                    if (TrySqlConnect(candidateConn, 1500, out var error))
                     {
+                        logger.LogInformation("SQL candidate succeeded: {Candidate}", masked);
                         selectedHost = candidate;
+                        selectedConn = candidateConn;
                         break;
+                    }
+                    else
+                    {
+                        logger.LogDebug(error ?? "Unknown error", Array.Empty<object>());
+                        logger.LogInformation("SQL candidate failed: {Candidate}", masked);
                     }
                 }
 
-                cs = $"Server={selectedHost},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
+                cs = string.IsNullOrEmpty(selectedConn)
+                    ? $"Server={selectedHost},{port};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;"
+                    : selectedConn;
         }
     }
 
@@ -120,23 +135,27 @@ app.MapRazorComponents<App>()
 
 app.Run();
 
-static bool TryTcpConnect(string host, string portText, int timeoutMs)
+static bool TrySqlConnect(string connStr, int timeoutMs, out string? error)
 {
-    if (!int.TryParse(portText, out var port)) return false;
+    error = null;
     try
     {
         using var cts = new CancellationTokenSource(timeoutMs);
-        using var tcp = new TcpClient();
-        var task = tcp.ConnectAsync(host, port);
-        // Wait for completion or timeout
+        using var conn = new SqlConnection(connStr);
+        var task = conn.OpenAsync(cts.Token);
+
+        // Wait for the open to complete or timeout
         if (task.Wait(timeoutMs))
         {
-            return tcp.Connected;
+            return conn.State == System.Data.ConnectionState.Open;
         }
+
+        error = "Timeout while attempting to open SQL connection.";
         return false;
     }
-    catch
+    catch (Exception ex)
     {
+        error = ex.Message;
         return false;
     }
 }
