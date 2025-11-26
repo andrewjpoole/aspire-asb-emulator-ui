@@ -26,7 +26,7 @@ topic.AddServiceBusSubscription("sub1")
          subscription.ForwardTo = "topic-sub1-fwd";
      });
 
-const bool testUsingContainerAndExtension = true;
+const bool testUsingContainerAndExtension = false;
 
 if (testUsingContainerAndExtension)
 {

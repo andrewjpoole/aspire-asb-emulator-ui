@@ -76,10 +76,7 @@ public static class AsbEmulatorUiResourceExtensions
         if (context.ExecutionContext.IsPublishMode)
             return;
 
-        var sbResource = serviceBusResource.Resource;
-
-        // Expose the resource name for building connection strings
-        context.EnvironmentVariables["asb-resource-name"] = sbResource.Name;
+        var sbResource = serviceBusResource.Resource;        
 
         // Find the SQL container that backs the emulator and expose its port
         var sqlAsbContainerResource = serviceBusResource.ApplicationBuilder.Resources.SingleOrDefault(r => r.Name == $"{sbResource.Name}-mssql")
@@ -93,28 +90,7 @@ public static class AsbEmulatorUiResourceExtensions
             ?? throw new Exception("Unable to get SQL endpoint port from ASB emulator resource.");
 
         // Expose the port and host that the ASB emulator's MS SQL backend is running on
-        context.EnvironmentVariables["asb-sql-port"] = sqlPort.ToString();
-
-        // If Endpoint.Host is available, expose it so the UI can prefer a resource-specific host
-        var endpointHost = firstUrl.Endpoint?.Host;
-        if (!string.IsNullOrEmpty(endpointHost))
-        {
-            // If the endpoint host is 'localhost' (meaning the SQL port was published on the host),
-            // containers cannot use 'localhost' to reach the host. Prefer the SQL container's resource
-            // name (which is resolvable on the application network) instead.
-            if (string.Equals(endpointHost, "localhost", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(endpointHost, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
-            {
-                // Use the SQL container resource name (e.g. {resourceName}-mssql) so UI in-container
-                // can resolve the SQL server via container DNS
-                context.EnvironmentVariables["asb-sql-host"] = sqlAsbContainerResource.Name;
-                context.Logger.LogInformation("Endpoint host reported as '{EndpointHost}', using container resource name '{SqlResourceName}' for asb-sql-host.", endpointHost, sqlAsbContainerResource.Name);
-            }
-            else
-            {
-                context.EnvironmentVariables["asb-sql-host"] = endpointHost;
-            }
-        }
+        context.EnvironmentVariables["asb-sql-port"] = sqlPort.ToString();       
 
         // Process container environment variables to extract the SQL password
         await sbResource.ProcessEnvironmentVariableValuesAsync(
@@ -140,8 +116,8 @@ public static class AsbEmulatorUiResourceExtensions
                 {
                     if (string.IsNullOrEmpty(processedValue) == false)
                     {
-                        context.EnvironmentVariables["ASB_EMULATOR_SQLSERVER"] = processedValue;
-                        context.Logger.LogInformation("Exposed SQL_SERVER to UI as ASB_EMULATOR_SQLSERVER: {SqlServer}", processedValue);
+                        context.EnvironmentVariables["asb-emulator-sqlserver"] = processedValue;
+                        context.Logger.LogInformation("Exposed SQL_SERVER to UI as asb-emulator-sqlserver: {SqlServer}", processedValue);
                     }
                     return;
                 }

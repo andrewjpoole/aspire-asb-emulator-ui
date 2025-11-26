@@ -1,8 +1,6 @@
 using AspireAsbEmulatorUi.App.Components;
 using AspireAsbEmulatorUi.App.Services;
 using AspireAsbEmulatorUi.App.Api;
-using System.Net.Sockets;
-using System.Linq;
 using Microsoft.Data.SqlClient;
 using System.Text.RegularExpressions;
 
@@ -13,7 +11,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 // Register application repository via DI so it can receive logging and other services
-builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
+builder.Services.AddSingleton(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     var logger = sp.GetRequiredService<ILogger<AsbEmulatorSqlEntityRepository>>();
@@ -21,12 +19,13 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
 
     // Prefer a full connection string if provided
     var cs = cfg["asb-sql-connectionstring"] ?? cfg["ASB_SQL_CONNECTIONSTRING"];
+    
     if (string.IsNullOrWhiteSpace(cs))
     {
         // Assemble connection string from port and password passed by AppHost
         var port = cfg["asb-sql-port"] ?? cfg["ASB_SQL_PORT"];
         var pwd = cfg["asb-sql-password"] ?? cfg["ASB_SQL_PASSWORD"];
-        var asbEmulatorSqlServer = cfg["ASB_EMULATOR_SQLSERVER"];
+        var asbEmulatorSqlServer = cfg["asb-emulator-sqlserver"] ?? cfg["ASB_EMULATOR_SQLSERVER"];
 
         if (!string.IsNullOrWhiteSpace(pwd) && (!string.IsNullOrWhiteSpace(port) || !string.IsNullOrWhiteSpace(asbEmulatorSqlServer)))
         {
@@ -40,25 +39,11 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
                 var h = parts[0];
                 string? p = parts.Length > 1 ? parts[1] : null;
                 candidates.Add((h, p));
-            }
-
-            // Prefer an explicit host provided by the hosting resource (exposed via environment variable)
-            var explicitHost = cfg["asb-sql-host"] ?? cfg["ASB_SQL_HOST"];
-            if (!string.IsNullOrWhiteSpace(explicitHost))
-            {
-                candidates.Add((explicitHost, null));
-            }
-
-            // Try service-name-based host (the hosting extension names the SQL container as `{resourceName}-mssql`)
-            var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? string.Empty;
-            if (!string.IsNullOrWhiteSpace(resourceName))
-            {
-                candidates.Add(($"{resourceName}-mssql", null));
-            }
+            }            
 
             // Fallbacks useful for local/dev/container scenarios
-            candidates.Add(("host.docker.internal", null)); // from within docker container on dockerdesktop
-            candidates.Add(("host.containers.internal", null)); // from within diocker container on podman
+            candidates.Add(("host.docker.internal", null));
+            //candidates.Add(("host.containers.internal", null));
             candidates.Add(("127.0.0.1", null));
 
             string selectedHost = candidates.First().Host;
@@ -95,11 +80,13 @@ builder.Services.AddSingleton<AsbEmulatorSqlEntityRepository>(sp =>
         }
     }
 
-    if (!string.IsNullOrWhiteSpace(cs)) repo.SetConnectionString(cs);
+    if (!string.IsNullOrWhiteSpace(cs)) 
+        repo.SetConnectionString(cs);
+    
     return repo;
 });
 
-builder.Services.AddSingleton<ServiceBusService>(sp =>
+builder.Services.AddSingleton(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     var logger = sp.GetRequiredService<ILogger<ServiceBusService>>();
