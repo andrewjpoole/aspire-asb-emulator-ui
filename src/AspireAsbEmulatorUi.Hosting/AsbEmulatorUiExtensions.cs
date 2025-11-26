@@ -117,7 +117,7 @@ public static class AsbEmulatorUiResourceExtensions
         }
 
         // Process container environment variables to extract the SQL password
-        await sqlAsbContainerResource.ProcessEnvironmentVariableValuesAsync(
+        await sbResource.ProcessEnvironmentVariableValuesAsync(
             context.ExecutionContext,
             async (key, unprocessedValue, processedValue, exception) =>
             {

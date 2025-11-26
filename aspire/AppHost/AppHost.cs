@@ -30,8 +30,7 @@ const bool testUsingContainerAndExtension = true;
 
 if (testUsingContainerAndExtension)
 {
-    builder.AddAsbEmulatorUi("asb-ui", serviceBus)
-           .WithLifetime(ContainerLifetime.Persistent);
+    builder.AddAsbEmulatorUi("asb-ui", serviceBus);
 }
 else 
 {
