@@ -46,27 +46,46 @@ builder.Services.AddSingleton(sp =>
             //candidates.Add(("host.containers.internal", null));
             candidates.Add(("127.0.0.1", null));
 
-            string selectedHost = candidates.First().Host;
             string selectedConn = string.Empty;
-            foreach (var candidate in candidates)
+            
+            // Run probing in a background thread to avoid deadlocking the Blazor SyncContext
+            var probeResult = Task.Run(async () => 
             {
-                var candidatePort = candidate.Port ?? port;
-                var candidateConn = $"Server={candidate.Host},{candidatePort};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
-                // Mask the password for logging
-                var masked = Regex.Replace(candidateConn, "(?i)(Password|Pwd)=[^;]+", "$1=****");
-                logger.LogInformation("Probing SQL candidate: {Candidate}", masked);
-                if (TrySqlConnect(candidateConn, 1500, out var error))
+                var probeTasks = candidates.Select(async candidate => 
                 {
-                    logger.LogInformation("SQL candidate succeeded");
-                    selectedHost = candidate.Host + (candidate.Port != null ? ":" + candidate.Port : string.Empty);
-                    selectedConn = candidateConn;
-                    break;
-                }
-                else
+                    var candidatePort = candidate.Port ?? port;
+                    var candidateConn = $"Server={candidate.Host},{candidatePort};Database=SbMessageContainerDatabase00001;User Id=sa;Password={pwd};TrustServerCertificate=True;";
+                    var masked = Regex.Replace(candidateConn, "(?i)(Password|Pwd)=[^;]+", "$1=****");
+                    logger.LogInformation("Probing SQL candidate: {Candidate}", masked);
+                    
+                    var (success, error) = await TrySqlConnectAsync(candidateConn, 1500).ConfigureAwait(false);
+                    
+                    if (!success)
+                    {
+                         logger.LogDebug("Probe failed for {Candidate}: {Error}", masked, error);
+                    }
+                    
+                    return new { Candidate = candidate, ConnectionString = candidateConn, Success = success, Error = error };
+                }).ToList();
+
+                while (probeTasks.Count > 0)
                 {
-                    logger.LogDebug(error ?? "Unknown error", Array.Empty<object>());
-                    logger.LogInformation("SQL candidate failed");
+                    var completedTask = await Task.WhenAny(probeTasks).ConfigureAwait(false);
+                    probeTasks.Remove(completedTask);
+                    var result = await completedTask.ConfigureAwait(false);
+                    
+                    if (result.Success)
+                    {
+                        return result;
+                    }
                 }
+                return null;
+            }).Result;
+
+            if (probeResult != null)
+            {
+                logger.LogInformation("SQL candidate succeeded: {Host}", probeResult.Candidate.Host);
+                selectedConn = probeResult.ConnectionString;
             }
 
             if (string.IsNullOrEmpty(selectedConn))
@@ -139,27 +158,17 @@ app.MapRazorComponents<App>()
 
 app.Run();
 
-static bool TrySqlConnect(string connStr, int timeoutMs, out string? error)
+static async Task<(bool Success, string? Error)> TrySqlConnectAsync(string connStr, int timeoutMs)
 {
-    error = null;
     try
     {
         using var cts = new CancellationTokenSource(timeoutMs);
         using var conn = new SqlConnection(connStr);
-        var task = conn.OpenAsync(cts.Token);
-
-        // Wait for the open to complete or timeout
-        if (task.Wait(timeoutMs))
-        {
-            return conn.State == System.Data.ConnectionState.Open;
-        }
-
-        error = "Timeout while attempting to open SQL connection.";
-        return false;
+        await conn.OpenAsync(cts.Token).ConfigureAwait(false);
+        return (true, null);
     }
     catch (Exception ex)
     {
-        error = ex.Message;
-        return false;
+        return (false, ex.Message);
     }
 }
