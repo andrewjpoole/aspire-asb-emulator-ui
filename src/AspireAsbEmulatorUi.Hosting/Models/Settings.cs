@@ -18,4 +18,6 @@ public class Settings
     };
 
     public Dictionary<string, Dictionary<string, CannedMessage>> CannedMessages { get; set; } = new();
+
+    public DateTime? LastUpdated { get; set; }
 }

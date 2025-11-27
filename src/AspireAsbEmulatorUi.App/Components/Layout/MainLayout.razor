@@ -1,5 +1,7 @@
 ﻿@inherits LayoutComponentBase
 
+@inject AspireAsbEmulatorUi.App.Services.SettingsService SettingsService
+
 <div class="flex flex-col min-h-screen">
     <div class="flex-1">
         @Body
@@ -24,3 +26,13 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div> *@
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await SettingsService.LoadFromStorageAsync();
+        }
+    }
+}

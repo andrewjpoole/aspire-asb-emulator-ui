@@ -22,13 +22,17 @@
     {
       "Key": "Environment",
       "Value": "Development"
+    },
+    {
+      "Key": "DeadLetter",
+      "Value": "true"
     }
   ],
   "CannedMessages": {
     "queue-one": {
       "test 1": {
         "ContentType": "application/json",
-        "Body": "{\n   \"test\": \"andrew\"\n}",
+        "Body": "{\n   \u0022test\u0022: \u0022andrew\u0022\n}",
         "BrokerProperties": {
           "CorrelationId": "ddd195a3-fa2a-4150-a693-f59df3a60af7"
         },
@@ -38,7 +42,7 @@
       },
       "sample event": {
         "ContentType": "application/json",
-        "Body": "{\n  \"eventId\": \"~newGuid~\",\n  \"eventType\": \"UserCreated\",\n  \"timestamp\": \"~now~\",\n  \"data\": {\n    \"userId\": \"12345\",\n    \"username\": \"john.doe\",\n    \"email\": \"john.doe@example.com\"\n  }\n}",
+        "Body": "{\n  \u0022eventId\u0022: \u0022~newGuid~\u0022,\n  \u0022eventType\u0022: \u0022UserCreated\u0022,\n  \u0022timestamp\u0022: \u0022~now~\u0022,\n  \u0022data\u0022: {\n    \u0022userId\u0022: \u002212345\u0022,\n    \u0022username\u0022: \u0022john.doe\u0022,\n    \u0022email\u0022: \u0022john.doe@example.com\u0022\n  }\n}",
         "BrokerProperties": {
           "CorrelationId": "~newGuid~",
           "MessageId": "~newGuid~"
@@ -47,6 +51,16 @@
           "MessageType": "MT_EVENT",
           "Source": "UserService"
         }
+      }
+    },
+    "*": {
+      "GeneralTestMessage": {
+        "ContentType": "application/json",
+        "Body": "{\r\n    \u0022Message\u0022: \u0022Hello world!\u0022\r\n}",
+        "BrokerProperties": {
+          "MessageId": "~newguid~"
+        },
+        "ApplicationProperties": {}
       }
     }
   }

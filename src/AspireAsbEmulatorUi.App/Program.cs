@@ -113,7 +113,7 @@ builder.Services.AddSingleton(sp =>
     return service;
 });
 
-builder.Services.AddSingleton<SettingsService>();
+builder.Services.AddScoped<SettingsService>();
 builder.Services.AddSingleton<PlaceholderService>();
 
 var app = builder.Build();

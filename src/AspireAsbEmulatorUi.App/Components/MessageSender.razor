@@ -3,6 +3,7 @@
 @using AspireAsbEmulatorUi.Models
 @using BlazorMonaco
 @using BlazorMonaco.Editor
+@implements IDisposable
 @inject ServiceBusService Bus
 @inject SettingsService SettingsService
 @inject PlaceholderService PlaceholderService
@@ -165,6 +166,22 @@
     private List<string> _cannedMessages = new();
     private string? _matchedEntityKey = null;
     private Dictionary<string, string> _scenarioToEntityMap = new();
+
+    protected override void OnInitialized()
+    {
+        SettingsService.OnSettingsChanged += HandleSettingsChanged;
+    }
+
+    public void Dispose()
+    {
+        SettingsService.OnSettingsChanged -= HandleSettingsChanged;
+    }
+
+    private void HandleSettingsChanged()
+    {
+        LoadAvailableCannedMessages();
+        StateHasChanged();
+    }
 
     protected override void OnParametersSet()
     {

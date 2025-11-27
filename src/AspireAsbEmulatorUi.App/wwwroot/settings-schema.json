@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Aspire ASB Emulator UI Settings",
+  "type": "object",
+  "properties": {
+    "ContentTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of available content types for messages."
+    },
+    "DefaultContentType": {
+      "type": "string",
+      "description": "The default content type selected when creating a new message."
+    },
+    "CommonApplicationProperties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Key": { "type": "string" },
+          "Value": { "type": "string" }
+        },
+        "required": ["Key", "Value"]
+      },
+      "description": "List of common application properties available for quick addition."
+    },
+    "CannedMessages": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Dictionary of scenarios for a specific entity (Queue/Topic). Key is the Scenario Name.",
+        "additionalProperties": {
+          "$ref": "#/definitions/CannedMessage"
+        }
+      },
+      "description": "Dictionary of canned messages. Key is the Entity Name (or wildcard pattern using asterisks '*')."
+    },
+    "LastUpdated": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp of the last update to the settings."
+    }
+  },
+  "definitions": {
+    "CannedMessage": {
+      "type": "object",
+      "properties": {
+        "ContentType": { "type": "string" },
+        "Body": { 
+          "type": "string",
+          "description": "The message body content. This should be formatted according to the ContentType (e.g., serialized JSON for application/json, XML string for application/xml, or plain text)."
+        },
+        "BrokerProperties": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "ApplicationProperties": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

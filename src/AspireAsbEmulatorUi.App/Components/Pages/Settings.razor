@@ -8,6 +8,7 @@
 @using BlazorMonaco.Editor
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.JSInterop
+@implements IDisposable
 @inject SettingsService SettingsService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
@@ -20,10 +21,6 @@
             <h1 class="text-2xl font-semibold">ASB Emulator Explorer Settings</h1>            
         </div>        
         <div class="flex items-center gap-3">
-            <button class="px-3 py-2 rounded flex items-center bg-blue-600 text-white hover:bg-blue-700" 
-                    @onclick="SaveSettings">
-                <span class="text-sm">Save Settings</span>
-            </button>
             <button class="px-3 py-2 rounded bg-slate-700 text-slate-100 hover:bg-slate-600 flex items-center gap-2" @onclick="NavigateHome">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="white">
                     <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
@@ -32,7 +29,12 @@
             </button>
         </div>        
     </div>
-    <p class="text-sm text-slate-400 mb-3">Changes here are immediate but only persisted in-memory, to survive a restart of Aspire you will need to export them and import the file in the Aspire AppHost.</p>
+    <p class="text-sm text-slate-400 mb-3">
+        Settings are automatically saved to your browser's local storage, so they will persist across browser sessions. 
+        However, to share settings with your team or persist them across different environments (or if you clear your browser data), 
+        you can export them to a JSON file and import them here or configure them in your Aspire AppHost.
+    </p>
+    <p class="text-xs text-slate-500 mb-3">Last Updated: @(_settings.LastUpdated?.ToString("g") ?? "Never")</p>
     
     <InputFile @ref="_fileInputComponent" 
                OnChange="HandleFileSelected" 
@@ -77,7 +79,7 @@
 
             <div class="mt-4">
                 <label class="text-sm text-slate-400 block mb-2">Default Content Type</label>
-                <select @bind="_settings.DefaultContentType" class="bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded w-full">
+                <select value="@_settings.DefaultContentType" @onchange="OnDefaultContentTypeChanged" class="bg-slate-900 border border-slate-700 text-slate-100 px-3 py-2 rounded w-full">
                     @foreach (var ct in _settings.ContentTypes)
                     {
                         <option value="@ct">@ct</option>
@@ -283,6 +285,39 @@
                     </svg>
                     Export Settings to File
                 </button>
+                <button class="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 flex items-center gap-2" @onclick="ClearLocalStorage">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Clear Local Storage
+                </button>
+                <button class="px-4 py-2 rounded bg-slate-600 text-white hover:bg-slate-700 flex items-center gap-2" @onclick="ReloadFromStorage">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Reload from Storage
+                </button>
+            </div>
+        </div>
+
+        <!-- AI Generation Helper Card -->
+        <div class="bg-slate-800 rounded p-6">
+            <h2 class="text-xl font-semibold mb-4">Generate Canned Messages with AI</h2>
+            <p class="text-sm text-slate-400 mb-4">
+                You can and should use an LLM (like ChatGPT, Claude, or Copilot) to generate realistic canned messages based on your actual code.
+            </p>
+            <div class="bg-slate-900 rounded p-4 border border-slate-700 text-sm text-slate-300 space-y-3">
+                <p>1. Download the <a href="settings-schema.json" target="_blank" class="text-blue-400 hover:underline">Settings JSON Schema</a>.</p>
+                <p>2. Copy your message contracts / DTO classes from your codebase.</p>
+                <p>3. Prompt the LLM with something like:</p>
+                <div class="bg-slate-800 p-3 rounded border border-slate-600 font-mono text-xs">
+                    "Generate a JSON settings file for the Aspire ASB Emulator UI that includes realistic 'CannedMessages' for the Types in [PASTE HINT FOR WHERE TO FIND TYPES IN YOUR REPO HERE]. <br/>
+                    Use this JSON schema: [PASTE SCHEMA CONTENT OR FILE]. <br/>
+                    Create scenarios for success and failure cases."
+                </div>
+                <p>4. Import the generated JSON file above.</p>
+                <p>5. Import the generated JSON file into the Aspire ASB Emulator UI via extension method in Aspire AppHost.</p>
+                <p>6. Send CannedMessages via UI or API. enjoy🙂.</p>
             </div>
         </div>
     </div>
@@ -402,6 +437,32 @@
 
     protected override void OnInitialized()
     {
+        SettingsService.OnSettingsChanged += HandleSettingsChanged;
+        LoadSettings();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Ensure settings are loaded from storage when this page is accessed directly
+            await SettingsService.LoadFromStorageAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        SettingsService.OnSettingsChanged -= HandleSettingsChanged;
+    }
+
+    private void HandleSettingsChanged()
+    {
+        LoadSettings();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void LoadSettings()
+    {
         _settings = SettingsService.GetSettings();
         
         _contentTypes = _settings.ContentTypes
@@ -432,7 +493,7 @@
     }
 
     // Save the edited entity name
-    private void SaveEntityNameEdit(string oldEntityName)
+    private async Task SaveEntityNameEdit(string oldEntityName)
     {
         if (string.IsNullOrWhiteSpace(_newEntityNameValue))
         {
@@ -497,6 +558,7 @@
         
         _editingEntityName = null;
         _newEntityNameValue = string.Empty;
+        await AutoSave();
         StateHasChanged();
     }
 
@@ -619,6 +681,7 @@
             msg != null)
         {
             msg.Body = await _modalBodyEditor.GetValue();
+            await AutoSave();
         }
         CloseBodyEditor();
     }
@@ -631,7 +694,7 @@
         _modalEditingScenarioName = string.Empty;
     }    
 
-    private void SaveAppPropertiesFromList(string entityName, string scenarioName)
+    private async Task SaveAppPropertiesFromList(string entityName, string scenarioName)
     {
         var key = $"{entityName}:{scenarioName}";
         if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
@@ -642,10 +705,11 @@
             msg.ApplicationProperties = list
                 .Where(p => !string.IsNullOrWhiteSpace(p.Key))
                 .ToDictionary(p => p.Key, p => (object)p.Value);
+            await AutoSave();
         }
     }
 
-    private void SaveBrokerPropertiesFromList(string entityName, string scenarioName)
+    private async Task SaveBrokerPropertiesFromList(string entityName, string scenarioName)
     {
         var key = $"{entityName}:{scenarioName}";
         if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
@@ -656,10 +720,11 @@
             msg.BrokerProperties = list
                 .Where(p => !string.IsNullOrWhiteSpace(p.Key))
                 .ToDictionary(p => p.Key, p => (object)p.Value);
+            await AutoSave();
         }
     }
 
-    private void InitializeMessage(string entityName, string scenarioName)
+    private async Task InitializeMessage(string entityName, string scenarioName)
     {
         if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios) &&
             scenarios.TryGetValue(scenarioName, out var msg))
@@ -679,6 +744,7 @@
             _appPropsLists[key] = new List<ApplicationPropertiesEditor.PropertyItem>();
             _brokerPropsLists[key] = new List<BrokerPropertiesEditor.PropertyItem>();
 
+            await AutoSave();
             _message = "Message initialized successfully";
             StateHasChanged();
         }
@@ -744,28 +810,24 @@
 
     private async Task SaveSettings()
     {
+        await AutoSave();
+        _message = "Settings saved successfully!";
+        StateHasChanged();
+        await Task.Delay(3000);
+        _message = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task AutoSave()
+    {
         // Sync lists back to settings
         _settings.ContentTypes = _contentTypes.Select(c => c.Value).ToList();
         _settings.CommonApplicationProperties = _commonProperties
             .Select(p => new KeyValuePair<string, string>(p.Key, p.Value))
             .ToList();
 
-        // Save property lists back to the settings
-        foreach (var entity in _settings.CannedMessages)
-        {
-            foreach (var scenario in entity.Value)
-            {
-                SaveAppPropertiesFromList(entity.Key, scenario.Key);
-                SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
-            }
-        }
-        
         SettingsService.UpdateSettings(_settings);
-        _message = "Settings saved successfully!";
-        StateHasChanged();
-        await Task.Delay(3000);
-        _message = string.Empty;
-        StateHasChanged();
+        await SettingsService.SaveToStorageAsync();
     }
 
     private async Task ExportSettings()
@@ -775,8 +837,8 @@
         {
             foreach (var scenario in entity.Value)
             {
-                SaveAppPropertiesFromList(entity.Key, scenario.Key);
-                SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
+                await SaveAppPropertiesFromList(entity.Key, scenario.Key);
+                await SaveBrokerPropertiesFromList(entity.Key, scenario.Key);
             }
         }
         
@@ -806,6 +868,7 @@
                 var json = await reader.ReadToEndAsync();
                 
                 SettingsService.ImportSettingsFromJson(json);
+                await SettingsService.SaveToStorageAsync();
                 _settings = SettingsService.GetSettings();
                 InitializePropertyLists();
                 _message = "Settings imported successfully!";
@@ -823,7 +886,7 @@
         _contentTypes.Add(new ContentTypeItem { IsEditing = true });
     }
 
-    private void SaveContentType(ContentTypeItem item)
+    private async Task SaveContentType(ContentTypeItem item)
     {
         if (string.IsNullOrWhiteSpace(item.Value)) return;
         // Check duplicates
@@ -833,6 +896,7 @@
             return;
         }
         item.IsEditing = false;
+        await AutoSave();
     }
 
     private void CancelContentType(ContentTypeItem item)
@@ -854,9 +918,10 @@
         item.IsEditing = true;
     }
 
-    private void RemoveContentType(ContentTypeItem item)
+    private async Task RemoveContentType(ContentTypeItem item)
     {
         _contentTypes.Remove(item);
+        await AutoSave();
     }
 
     // Common Properties
@@ -865,10 +930,11 @@
         _commonProperties.Add(new CommonPropertyItem { IsEditing = true });
     }
     
-    private void SaveCommonProperty(CommonPropertyItem item)
+    private async Task SaveCommonProperty(CommonPropertyItem item)
     {
         if (string.IsNullOrWhiteSpace(item.Key)) return;
         item.IsEditing = false;
+        await AutoSave();
     }
     
     private void CancelCommonProperty(CommonPropertyItem item)
@@ -892,9 +958,10 @@
         item.IsEditing = true;
     }
 
-    private void RemoveCommonProperty(CommonPropertyItem item)
+    private async Task RemoveCommonProperty(CommonPropertyItem item)
     {
         _commonProperties.Remove(item);
+        await AutoSave();
     }
 
     // Entities
@@ -910,7 +977,7 @@
         _addEntityNameValue = string.Empty;
     }
     
-    private void SaveNewEntity()
+    private async Task SaveNewEntity()
     {
         if (string.IsNullOrWhiteSpace(_addEntityNameValue)) return;
         if (_settings.CannedMessages.ContainsKey(_addEntityNameValue))
@@ -923,10 +990,11 @@
         _newScenarioNames[_addEntityNameValue] = string.Empty;
         _isAddingEntity = false;
         _addEntityNameValue = string.Empty;
+        await AutoSave();
         StateHasChanged();
     }
 
-    private void RemoveEntity(string entityName)
+    private async Task RemoveEntity(string entityName)
     {
         _settings.CannedMessages.Remove(entityName);
         _newScenarioNames.Remove(entityName);
@@ -939,6 +1007,7 @@
             _brokerPropsLists.Remove(key);
         }
         
+        await AutoSave();
         StateHasChanged();
     }
 
@@ -961,7 +1030,7 @@
         _addingScenarioForEntity = null;
     }
     
-    private void SaveNewScenario(string entityName)
+    private async Task SaveNewScenario(string entityName)
     {
         if (!_newScenarioNames.TryGetValue(entityName, out var scenarioName) || string.IsNullOrWhiteSpace(scenarioName)) return;
         
@@ -990,11 +1059,12 @@
             
             _addingScenarioForEntity = null;
             _newScenarioNames[entityName] = string.Empty;
+            await AutoSave();
             StateHasChanged();
         }
     }
     
-    private void RemoveScenario(string entityName, string scenarioName)
+    private async Task RemoveScenario(string entityName, string scenarioName)
     {
         if (_settings.CannedMessages.TryGetValue(entityName, out var scenarios))
         {
@@ -1005,6 +1075,7 @@
             _brokerPropsLists.Remove(key);
             _expandedScenarios.Remove(key);
             
+            await AutoSave();
             StateHasChanged();
         }
     }
@@ -1114,6 +1185,7 @@
         // Expand the new scenario
         _expandedScenarios.Add(newKey);
         
+        await AutoSave();
         StateHasChanged();
     }
 
@@ -1127,5 +1199,26 @@
             "text/plain" => "plaintext",
             _ => "plaintext",
         };
+    }
+
+    private async Task OnDefaultContentTypeChanged(ChangeEventArgs e)
+    {
+        _settings.DefaultContentType = e.Value?.ToString() ?? string.Empty;
+        await AutoSave();
+    }
+
+    private async Task ClearLocalStorage()
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to clear local storage? This will reset settings to defaults."))
+        {
+            await SettingsService.ClearStorageAsync();
+            _message = "Local storage cleared and settings reset to defaults.";
+        }
+    }
+
+    private async Task ReloadFromStorage()
+    {
+        await SettingsService.LoadFromStorageAsync();
+        _message = "Reloaded settings from local storage.";
     }
 }

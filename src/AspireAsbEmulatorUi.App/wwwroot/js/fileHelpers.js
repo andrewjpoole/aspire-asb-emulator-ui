@@ -11,9 +11,6 @@ window.downloadJsonFile = function (jsonContent, fileName) {
     const blob = new Blob([jsonContent], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     
-    // Open in new tab
-    const newWindow = window.open(url, '_blank');
-    
     // Also trigger download
     const link = document.createElement('a');
     link.href = url;

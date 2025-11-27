@@ -4,6 +4,7 @@
 @using System.Threading
 @inject AspireAsbEmulatorUi.App.Services.AsbEmulatorSqlEntityRepository Repo
 @inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
+@inject AspireAsbEmulatorUi.App.Services.SettingsService SettingsService
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @inject NavigationManager Navigation
 
@@ -292,6 +293,15 @@
     protected override async Task OnInitializedAsync()
     {
         await Refresh();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Ensure settings are loaded from storage when this page is accessed directly
+            await SettingsService.LoadFromStorageAsync();
+        }
     }
 
     private async Task Refresh()
