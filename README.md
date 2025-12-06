@@ -1,8 +1,12 @@
-﻿# Aspire ASB Emulator UI
+﻿![.NET 10](https://img.shields.io/badge/.NET-10-blue) ![Blazor](https://img.shields.io/badge/Blazor-Interactive%20Server-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC)
+
+# Aspire ASB Emulator UI
 
 A Blazor-based web UI for exploring and testing Azure Service Bus entities in the [Azure Service Bus Emulator](https://learn.microsoft.com/azure/service-bus-messaging/test-locally-with-service-bus-emulator) in Aspire.
 
-![.NET 10](https://img.shields.io/badge/.NET-10-blue) ![Blazor](https://img.shields.io/badge/Blazor-Interactive%20Server-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC)
+Basically postman for the ASB emulator!
+
+![Screen recording](./media/AsbEmulatorUi.gif)
 
 ## Features
 
@@ -18,7 +22,10 @@ A Blazor-based web UI for exploring and testing Azure Service Bus entities in th
 - Configure broker properties (MessageId, CorrelationId, SessionId, TTL, ScheduledEnqueueTime, etc.)
 - Configure application properties
 - **Placeholder syntax** for dynamic test data
-- **Save as Canned Message** for reuse
+- **Canned Messages** library:
+  - Save frequently used messages
+  - Organize by category
+  - **AI Generation**: Generate message templates using AI (requires an LLM)
 - **Quick Values** clipboard helper (new GUIDs, timestamps)
 
 ### 👀 Message Viewer
@@ -27,20 +34,42 @@ A Blazor-based web UI for exploring and testing Azure Service Bus entities in th
 - Display broker and application properties
 
 ### ⚙️ Settings Management
-- Manage content types
-- Configure common application properties
-- **Canned Messages** library with Monaco editor
-- Import/Export settings as JSON
+- **Persistence**: Settings are saved to `localStorage` and automatically loaded.
+- **Import/Export**: Export settings to JSON for sharing or backup.
+- Manage content types and common application properties.
 
 ## Quick Start
 
-```bash
-git clone https://github.com/andrewjpoole/aspire-asb-emulator-ui.git
-cd aspire-asb-emulator-ui/aspire/AppHost
-dotnet run
+### Wiring up in Aspire
+
+1.  Add the `AspireAsbEmulatorUi.Hosting` package to your AppHost project.
+2.  Use the `AddAsbEmulatorUi` extension method to add the UI resource and wire it up to your Azure Service Bus resource.
+
+```csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
+// Add Azure Service Bus and configure it to run with the emulator
+var serviceBus = builder
+    .AddAzureServiceBus("myservicebus")
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
+
+// Add the ASB Emulator UI
+builder.AddAsbEmulatorUi("asb-ui", serviceBus);
+
+builder.Build().Run();
 ```
 
-Access the UI via the Aspire dashboard.
+### Environment Variables
+
+The application uses the following environment variables for configuration:
+
+| Variable | Description |
+|----------|-------------|
+| `asb-sql-connectionstring` | Full connection string to the ASB Emulator's SQL backend. Overrides other SQL settings. |
+| `asb-sql-port` | Port of the SQL server (automatically set by `AddAsbEmulatorUi`). |
+| `asb-sql-password` | Password for the `sa` user (automatically set by `AddAsbEmulatorUi`). |
+| `asb-emulator-sqlserver` | Hostname (and optional port) of the SQL server. Useful for custom networking setups. |
+| `AsbEmulatorUi__SettingsOverride` | JSON string to override application settings (Canned Messages, etc.). |
 
 ## Placeholder Syntax
 
@@ -86,6 +115,37 @@ Use placeholders in message bodies for dynamic test data:
 ## Documentation
 - [PlaceholderSyntax.md](docs/PlaceholderSyntax.md) - Complete placeholder reference
 - [FeatureGuide.md](docs/FeatureGuide.md) - Detailed feature documentation
+
+## API
+
+The application exposes a simple REST API for integration testing and automation.
+
+### Send Canned Message
+
+Triggers the sending of a pre-configured "Canned Message" to a specific entity.
+
+```http
+POST /api/canned/{entity}/{scenario}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entity` | Route | The name of the queue or topic (e.g., `orders-queue`). |
+| `scenario` | Route | The name of the canned message scenario (e.g., `OrderCreated`). |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "entity": "orders-queue",
+  "scenario": "OrderCreated",
+  "messageId": "a1b2c3d4...",
+  "sentAt": "2024-01-15T12:00:00+00:00"
+}
+```
+
+This is particularly useful for triggering test scenarios from external tools or scripts.
 
 ## License
 MIT License

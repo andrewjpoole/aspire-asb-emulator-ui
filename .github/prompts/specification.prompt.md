@@ -8,9 +8,4 @@ Json/xml in message bodies etc should use blazor monaco editor for syntax highli
 
 TODO
 * test API
-* increase test coverage
-
-FUTURE
-* send a batch of messages at once
-* watch mode which auto peeks messages on a timer?
-* dummy app which subscribes and completes/deadletters based on an application prop or something
+* update readme and add some nice screenshots/gif etc
