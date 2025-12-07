@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.20</Version>
+	<Version>1.0.21</Version>
 	<PackageReleaseNotes>
+		1.0.21 Fix issue with monaco editor
 		1.0.20 Fix an issue with replacement tokens not being processed properly in MessageSender component
 		1.0.19 Improved settings persistence using local storage in the UI
 		1.0.17 Add support for container connectivity using podman
