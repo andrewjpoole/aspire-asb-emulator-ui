@@ -169,7 +169,7 @@ public class ServiceBusService : IAsyncDisposable
             throw new InvalidOperationException(errMsg);
         }
 
-        var sender = Client.CreateSender(clean);
+        await using var sender = Client.CreateSender(clean);
         await sender.SendMessageAsync(message);
         _logger.LogInformation("Successfully sent pre-built message to '{Entity}' - MessageId: {MessageId}, BodySize: {Size} bytes, AppProps: {AppPropsCount}", 
             clean, message.MessageId ?? "(none)", message.Body.ToMemory().Length, message.ApplicationProperties?.Count ?? 0);
@@ -187,7 +187,7 @@ public class ServiceBusService : IAsyncDisposable
             throw new InvalidOperationException(errMsg);
         }
 
-        var sender = Client.CreateSender(clean);
+        await using var sender = Client.CreateSender(clean);
         var msg = new ServiceBusMessage(Encoding.UTF8.GetBytes(body ?? string.Empty))
         {
             ContentType = "application/json"

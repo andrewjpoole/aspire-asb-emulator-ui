@@ -6,7 +6,7 @@ A Blazor-based web UI for exploring and testing Azure Service Bus entities in th
 
 Basically postman for the ASB emulator!
 
-![Screen recording](./media/AsbEmulatorUi.gif)
+![Screen recording](./media/AsbEmulatorUiScreenshot.gif)
 
 ## Features
 

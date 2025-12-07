@@ -186,10 +186,7 @@
     protected override void OnParametersSet()
     {
         LoadAvailableCannedMessages();
-        EnsureDefaultMessageIdExists();
     }
-
-    
 
     private void LoadAvailableCannedMessages()
     {
@@ -371,7 +368,6 @@
                 }
 
                 _result = $"Loaded canned message: {actualScenarioName} (from {entityKey})";
-                EnsureDefaultMessageIdExists();
                 StateHasChanged();
             }
         }
@@ -394,23 +390,10 @@
         
         _appProperties.Clear();
         _brokerProperties.Clear();
-        EnsureDefaultMessageIdExists();
         _selectedCannedMessage = string.Empty;
         _result = string.Empty;
 
         StateHasChanged();
-    }
-
-    private void EnsureDefaultMessageIdExists()
-    {
-        if (!_brokerProperties.Any(p => string.Equals(p.Key, "MessageId", StringComparison.OrdinalIgnoreCase)))
-        {
-            _brokerProperties.Insert(0, new BrokerPropertiesEditor.PropertyItem
-            {
-                Key = "MessageId",
-                Value = Guid.NewGuid().ToString()
-            });
-        }
     }
 
     private StandaloneEditorConstructionOptions EditorConstructionOptions(StandaloneCodeEditor editor)
@@ -471,13 +454,13 @@
             _confirmEmpty = true;
             return;
         }
-        // Prevent send when there are unsaved edits in application or broker properties
+        
         if (_appProperties.Any(p => p.IsEditing) || _brokerProperties.Any(p => p.IsEditing))
         {
             _result = "Cannot send: there are unsaved property edits. Save or cancel them before sending.";
             return;
         }
-        // Validate for duplicate application property keys
+
         var duplicateKey = GetDuplicateApplicationKey();
         if (!string.IsNullOrEmpty(duplicateKey))
         {
@@ -485,10 +468,18 @@
             return;
         }
 
-        await Send();
+        if (_sendMultiple)        
+            await SendMultiple();        
+        else        
+            await Send();        
     }
 
     private async Task Send()
+    {
+        await Send(false);
+    }
+
+    private async Task Send(bool isBatch)
     {
         _confirmEmpty = false;
 
@@ -500,16 +491,14 @@
 
         try
         {
-            // Get the current value from the editor
-            if (_editor != null)
+            // Get the current value from the editor if not in batch mode
+            // In batch mode, SendMultiple fetches it once at the start
+            if (!isBatch && _editor != null)
             {
                 _body = await _editor.GetValue();
             }
 
-            // Process placeholders in the body
             var processedBody = PlaceholderService.ProcessPlaceholders(_body);
-
-            var ct = _contentType;
 
             var appProps = _appProperties
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
@@ -519,25 +508,63 @@
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
                 .ToDictionary(k => k.Key, v => (object)PlaceholderService.ProcessPlaceholders(v.Value));
 
-            if (!string.IsNullOrWhiteSpace(ct)) brokerProps["ContentType"] = ct;
+            if (!string.IsNullOrWhiteSpace(_contentType)) brokerProps["ContentType"] = _contentType;
 
             // Determine if user explicitly provided a MessageId
             var userProvidedMessageId = brokerProps.TryGetValue("MessageId", out var providedMid) && !string.IsNullOrWhiteSpace(providedMid?.ToString());
 
-            int count = _sendMultiple ? Math.Max(1, _messageCount) : 1;
+            // If user didn't specify MessageId, generate a new Guid per message            
+            if (!userProvidedMessageId)
+            {
+                brokerProps["MessageId"] = Guid.NewGuid().ToString();
+            }            
+
+            await Bus.SendMessageAsync(SelectedEntity, processedBody, appProps, brokerProps);
+            
+            if (!isBatch)
+            {
+                var messageId = brokerProps["MessageId"]?.ToString();
+                _result = $"Sent 1 message at {DateTime.Now:HH:mm:ss} with MessageId: {messageId}";
+
+                // Notify parent to refresh entity counts (give emulator a moment)
+                if (OnEntityChanged.HasDelegate)
+                {
+                    await Task.Delay(500);
+                    await OnEntityChanged.InvokeAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            if (isBatch) throw;
+            _result = $"Error: {ex.Message}";
+        }
+    }
+
+    private async Task SendMultiple()
+    {
+        _confirmEmpty = false;
+
+        if (string.IsNullOrWhiteSpace(SelectedEntity))
+        {
+            _result = "Select a target entity first.";
+            return;
+        }
+
+        try
+        {
+            // Get the current value from the editor once
+            if (_editor != null)
+            {
+                _body = await _editor.GetValue();
+            }
+
+            int count = Math.Max(1, _messageCount);
             for (int i = 0; i < count; i++)
             {
-                // If user didn't specify MessageId, generate a new Guid per message
-                if (!userProvidedMessageId)
-                {
-                    brokerProps["MessageId"] = Guid.NewGuid().ToString();
-                }
-
-                await Bus.SendMessageAsync(SelectedEntity, processedBody, appProps, brokerProps);
+                await Send(true);
             }
-            _result = $"Sent {count} message{(count > 1 ? "s" : "")} at {DateTime.Now:HH:mm:ss}";
-
-            // Keep the canned selection, editor body, and properties so the user can resend if desired.
+            _result = $"Sent {count} messages at {DateTime.Now:HH:mm:ss}";
 
             // Notify parent to refresh entity counts (give emulator a moment)
             if (OnEntityChanged.HasDelegate)
