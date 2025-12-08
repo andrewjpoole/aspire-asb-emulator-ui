@@ -1,5 +1,6 @@
 using AspireAsbEmulatorUi.App.Models;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AspireAsbEmulatorUi.App.Services;
 
@@ -7,6 +8,12 @@ public class AsbEmulatorSqlEntityRepository
 {
     private string _connectionString = string.Empty;
     private readonly ILogger<AsbEmulatorSqlEntityRepository> _logger;
+
+    // Parameterless constructor for test frameworks that create proxies/substitutes
+    public AsbEmulatorSqlEntityRepository()
+        : this(NullLogger<AsbEmulatorSqlEntityRepository>.Instance)
+    {
+    }
 
     public AsbEmulatorSqlEntityRepository(ILogger<AsbEmulatorSqlEntityRepository> logger)
     {
