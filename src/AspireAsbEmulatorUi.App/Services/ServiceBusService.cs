@@ -33,6 +33,14 @@ public class ServiceBusService : IAsyncDisposable
             if (_client == null)
             {
                 var cs = NormalizeConnectionString(_connectionString);
+                if (string.IsNullOrWhiteSpace(cs))
+                {
+                    var msg = "ServiceBus client cannot be created because the connection string is not configured. " +
+                              "Provide a Service Bus connection string (ConnectionStrings__{resourceName}) or set the ASB connection environment variable.";
+                    _logger.LogError(msg);
+                    throw new InvalidOperationException(msg);
+                }
+
                 _client = new ServiceBusClient(cs);
             }
             return _client;

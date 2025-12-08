@@ -82,6 +82,8 @@ public static class AsbEmulatorUiResourceExtensions
         var sqlAsbContainerResource = serviceBusResource.ApplicationBuilder.Resources.SingleOrDefault(r => r.Name == $"{sbResource.Name}-mssql")
             ?? throw new Exception($"Unable to find ASB emulator SQL container with name {sbResource.Name}-mssql");
 
+        context.EnvironmentVariables["asb-resource-name"] = sbResource.Name;
+
         if (!sqlAsbContainerResource.TryGetUrls(out var urls) || urls == null || !urls.Any())
             throw new Exception("Unable to get any SQL endpoint URLs from ASB emulator resource.");
 
