@@ -1,8 +1,8 @@
 ﻿![.NET 10](https://img.shields.io/badge/.NET-10-blue) ![Blazor](https://img.shields.io/badge/Blazor-Interactive%20Server-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC)
 
-# Aspire ASB Emulator UI
+# Azure Service Bus Emulator UI
 
-A Blazor-based web UI for exploring and testing Azure Service Bus entities in the [Azure Service Bus Emulator](https://learn.microsoft.com/azure/service-bus-messaging/test-locally-with-service-bus-emulator) in Aspire.
+A Blazor-based web UI for exploring and testing Azure Service Bus entities in the [Azure Service Bus Emulator](https://learn.microsoft.com/azure/service-bus-messaging/test-locally-with-service-bus-emulator) especially although not exclusively in Aspire.
 
 Basically postman for the ASB emulator!
 
