@@ -1,4 +1,5 @@
 using Aspire.AsbEmulatorUi.Integration;
+using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Azure;
 using AspireAsbEmulatorUi.Models;
 using Microsoft.Extensions.Logging;
@@ -12,6 +13,45 @@ namespace Aspire.Hosting;
 /// </summary>
 public static class AsbEmulatorUiResourceExtensions
 {
+    /// <summary>
+    /// Adds the ASB Emulator UI to the Azure Service Bus emulator resource, displaying an "Explorer UI" link on the emulator resource in the Aspire dashboard
+    /// </summary>
+    /// <param name="builder">The resource builder for the Azure Service Bus emulator</param>
+    /// <param name="httpPort">The HTTP port for the UI (default: 8000)</param>
+    /// <returns>The resource builder for chaining</returns>
+    public static IResourceBuilder<AzureServiceBusEmulatorResource> WithUi(
+        this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
+        int httpPort = 8000)
+    {
+        var innerResource = (AzureServiceBusResource)typeof(AzureServiceBusEmulatorResource)
+            .GetField("_innerResource", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(builder.Resource)!;
+
+        var serviceBusBuilder = builder.ApplicationBuilder.CreateResourceBuilder(innerResource);
+
+        var emulatorUi = builder.ApplicationBuilder.AddAsbEmulatorUi(
+            $"{builder.Resource.Name}-asb-ui", serviceBusBuilder, httpPort: httpPort);
+
+        emulatorUi.OnInitializeResource(async (resource, evt, ct) =>
+        {
+            await evt.Notifications.PublishUpdateAsync(resource, s => s with
+            {
+                IsHidden = true
+            });
+        });
+
+        builder.WithUrls(context =>
+        {
+            context.Urls.Add(new ResourceUrlAnnotation
+            {
+                Url = emulatorUi.GetEndpoint("http").Url,
+                DisplayText = "Explorer UI"
+            });
+        });
+
+        return builder;
+    }
+
     /// <summary>
     /// Adds the ASB Emulator UI to the application, automatically wiring it to an Azure Service Bus emulator resource
     /// </summary>
