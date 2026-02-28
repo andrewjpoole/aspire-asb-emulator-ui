@@ -23,9 +23,15 @@ public static class AsbEmulatorUiResourceExtensions
         this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
         int httpPort = 8000)
     {
-        var innerResource = (AzureServiceBusResource)typeof(AzureServiceBusEmulatorResource)
-            .GetField("_innerResource", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(builder.Resource)!;
+        var field = typeof(AzureServiceBusEmulatorResource)
+            .GetField("_innerResource", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "Unable to find '_innerResource' field on AzureServiceBusEmulatorResource. " +
+                "The internal API may have changed in a newer version of the Aspire.Hosting.Azure.ServiceBus package.");
+
+        var innerResource = (AzureServiceBusResource)(field.GetValue(builder.Resource)
+            ?? throw new InvalidOperationException(
+                "The '_innerResource' field on AzureServiceBusEmulatorResource returned null."));
 
         var serviceBusBuilder = builder.ApplicationBuilder.CreateResourceBuilder(innerResource);
 
