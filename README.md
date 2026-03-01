@@ -43,17 +43,64 @@ Basically postman for the ASB emulator!
 ### Wiring up in Aspire
 
 1.  Add the `AspireAsbEmulatorUi.Hosting` package to your AppHost project.
-2.  Use the `AddAsbEmulatorUi` extension method to add the UI resource and wire it up to your Azure Service Bus resource.
+2.  Use one of the approaches below to add the UI resource.
+
+#### Using `WithUi()` (recommended)
+
+The simplest way to add the UI is to chain `.WithUi()` inside `RunAsEmulator()`. This creates a hidden UI container and displays an **Explorer UI** link directly on the emulator resource in the Aspire dashboard.
 
 ```csharp
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Add Azure Service Bus and configure it to run with the emulator
+var serviceBus = builder
+    .AddAzureServiceBus("myservicebus")
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent).WithUi());
+
+builder.Build().Run();
+```
+
+You can also provide canned messages or a settings override file via additional chaining:
+
+```csharp
+// WithUi() + canned messages
+var serviceBus = builder
+    .AddAzureServiceBus("myservicebus")
+    .RunAsEmulator(c => c
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithUi()
+        .WithCannedMessages(new Dictionary<string, Dictionary<string, CannedMessage>>
+        {
+            ["orders-queue"] = new()
+            {
+                ["OrderCreated"] = new CannedMessage
+                {
+                    ContentType = "application/json",
+                    Body = "{\"orderId\": \"~newGuid~\", \"amount\": 99.99}",
+                    ApplicationProperties = new() { ["MessageType"] = "OrderCreated" }
+                }
+            }
+        }));
+
+// WithUi() + settings override file
+var serviceBus = builder
+    .AddAzureServiceBus("myservicebus")
+    .RunAsEmulator(c => c
+        .WithLifetime(ContainerLifetime.Persistent)
+        .WithUi()
+        .WithOverridenSettingsFile("settings.json"));
+```
+
+#### Using `AddAsbEmulatorUi()` (standalone resource)
+
+Alternatively, add the UI as a separate visible resource in the dashboard:
+
+```csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
 var serviceBus = builder
     .AddAzureServiceBus("myservicebus")
     .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
 
-// Add the ASB Emulator UI
 builder.AddAsbEmulatorUi("asb-ui", serviceBus);
 
 builder.Build().Run();
