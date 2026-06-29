@@ -42,7 +42,7 @@ Basically postman for the ASB emulator!
 
 ### Wiring up in Aspire
 
-1.  Add the `AspireAsbEmulatorUi.Hosting` package to your AppHost project.
+1.  Add the [`AJP.Aspire.Hosting.AsbEmulatorUi`](https://www.nuget.org/packages/AJP.Aspire.Hosting.AsbEmulatorUi/) package to your AppHost project.
 2.  Use one of the approaches below to add the UI resource.
 
 #### Using `WithUi()` (recommended)
