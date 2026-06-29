@@ -13,6 +13,97 @@ namespace Aspire.Hosting;
 public static class AsbEmulatorUiResourceExtensions
 {
     /// <summary>
+    /// Adds the ASB Emulator UI to the Azure Service Bus emulator resource, displaying an "Explorer UI" link on the emulator resource in the Aspire dashboard
+    /// </summary>
+    /// <param name="builder">The resource builder for the Azure Service Bus emulator</param>
+    /// <param name="httpPort">The HTTP port for the UI (default: 8000)</param>
+    /// <param name="hideEmulatorResourceinAspireDashboard">Whether to hide the ASB Emulator resource in the Aspire dashboard, unhide if you need to debug via resource logs etc (default: true)</param>
+    /// <returns>The resource builder for chaining</returns>
+    public static IResourceBuilder<AzureServiceBusEmulatorResource> WithUi(
+        this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
+        int httpPort = 8000, bool hideEmulatorResourceinAspireDashboard = true)
+    {
+        var field = typeof(AzureServiceBusEmulatorResource)
+            .GetField("_innerResource", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException(
+                "Unable to find '_innerResource' field on AzureServiceBusEmulatorResource. " +
+                "The internal API may have changed in a newer version of the Aspire.Hosting.Azure.ServiceBus package.");
+
+        var innerResource = (AzureServiceBusResource)(field.GetValue(builder.Resource)
+            ?? throw new InvalidOperationException(
+                "The '_innerResource' field on AzureServiceBusEmulatorResource returned null."));
+
+        var serviceBusBuilder = builder.ApplicationBuilder.CreateResourceBuilder(innerResource);
+
+        var emulatorUi = builder.ApplicationBuilder.AddAsbEmulatorUi(
+            $"{builder.Resource.Name}-asb-ui", serviceBusBuilder, httpPort: httpPort);
+
+        emulatorUi.OnInitializeResource(async (resource, evt, ct) =>
+        {
+            await evt.Notifications.PublishUpdateAsync(resource, s => s with
+            {                
+                IsHidden = hideEmulatorResourceinAspireDashboard
+            });
+        });
+
+        builder.WithUrls(context =>
+        {
+            context.Urls.Add(new ResourceUrlAnnotation
+            {
+                Url = emulatorUi.GetEndpoint("http").Url,
+                DisplayText = "Explorer UI"
+            });
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds canned messages to the ASB Emulator UI resource that was previously added via WithUi()
+    /// </summary>
+    /// <param name="builder">The resource builder for the Azure Service Bus emulator</param>
+    /// <param name="entitiesWithScenarios">Dictionary of entity names to their canned message scenarios</param>
+    /// <returns>The resource builder for chaining</returns>
+    /// <exception cref="InvalidOperationException">Thrown when WithUi() has not been called first, or when settings have already been overridden via WithOverridenSettingsFile</exception>
+    public static IResourceBuilder<AzureServiceBusEmulatorResource> WithCannedMessages(
+        this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
+        Dictionary<string, Dictionary<string, CannedMessage>> entitiesWithScenarios)
+    {
+        var uiResourceBuilder = GetUiResourceBuilder(builder);
+        uiResourceBuilder.WithCannedMessages(entitiesWithScenarios);
+        return builder;
+    }
+
+    /// <summary>
+    /// Provides a custom settings file path to override the default settings on the ASB Emulator UI resource that was previously added via WithUi()
+    /// </summary>
+    /// <param name="builder">The resource builder for the Azure Service Bus emulator</param>
+    /// <param name="settingsFilePath">The path to the settings JSON file</param>
+    /// <returns>The resource builder for chaining</returns>
+    /// <exception cref="InvalidOperationException">Thrown when WithUi() has not been called first, or when settings have already been overridden via WithCannedMessages</exception>
+    public static IResourceBuilder<AzureServiceBusEmulatorResource> WithOverridenSettingsFile(
+        this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
+        string settingsFilePath)
+    {
+        var uiResourceBuilder = GetUiResourceBuilder(builder);
+        uiResourceBuilder.WithOverridenSettingsFile(settingsFilePath);
+        return builder;
+    }
+
+    private static IResourceBuilder<AsbEmulatorUiResource> GetUiResourceBuilder(
+        IResourceBuilder<AzureServiceBusEmulatorResource> builder)
+    {
+        var uiResourceName = $"{builder.Resource.Name}-asb-ui";
+        var uiResource = builder.ApplicationBuilder.Resources.OfType<AsbEmulatorUiResource>()
+            .SingleOrDefault(r => r.Name == uiResourceName)
+            ?? throw new InvalidOperationException(
+                $"No ASB Emulator UI resource found with name '{uiResourceName}'. " +
+                "Ensure WithUi() is called before WithCannedMessages() or WithOverridenSettingsFile().");
+
+        return builder.ApplicationBuilder.CreateResourceBuilder(uiResource);
+    }
+
+    /// <summary>
     /// Adds the ASB Emulator UI to the application, automatically wiring it to an Azure Service Bus emulator resource
     /// </summary>
     /// <param name="builder">The distributed application builder</param>

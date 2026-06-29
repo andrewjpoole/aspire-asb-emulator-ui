@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.24</Version>
+	<Version>1.0.25</Version>
 	<PackageReleaseNotes>
+		1.0.25 Nest emulatorUI under the emulator via .WithUI() and some package upgrades
 		1.0.24 Fixed formatting issue with very long entity names
 		1.0.21 Fix issue with monaco editor
 		1.0.20 Fix an issue with replacement tokens not being processed properly in MessageSender component
@@ -36,8 +37,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.0.2" />
-    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.0.2" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.4.6" />
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.4.6" />
   </ItemGroup>  
 
 	<ItemGroup>
