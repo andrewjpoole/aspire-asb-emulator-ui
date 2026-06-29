@@ -1,5 +1,4 @@
 using Aspire.AsbEmulatorUi.Integration;
-using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Azure;
 using AspireAsbEmulatorUi.Models;
 using Microsoft.Extensions.Logging;
@@ -18,10 +17,11 @@ public static class AsbEmulatorUiResourceExtensions
     /// </summary>
     /// <param name="builder">The resource builder for the Azure Service Bus emulator</param>
     /// <param name="httpPort">The HTTP port for the UI (default: 8000)</param>
+    /// <param name="hideEmulatorResourceinAspireDashboard">Whether to hide the ASB Emulator resource in the Aspire dashboard, unhide if you need to debug via resource logs etc (default: true)</param>
     /// <returns>The resource builder for chaining</returns>
     public static IResourceBuilder<AzureServiceBusEmulatorResource> WithUi(
         this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
-        int httpPort = 8000)
+        int httpPort = 8000, bool hideEmulatorResourceinAspireDashboard = true)
     {
         var field = typeof(AzureServiceBusEmulatorResource)
             .GetField("_innerResource", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -41,8 +41,8 @@ public static class AsbEmulatorUiResourceExtensions
         emulatorUi.OnInitializeResource(async (resource, evt, ct) =>
         {
             await evt.Notifications.PublishUpdateAsync(resource, s => s with
-            {
-                IsHidden = true
+            {                
+                IsHidden = hideEmulatorResourceinAspireDashboard
             });
         });
 
