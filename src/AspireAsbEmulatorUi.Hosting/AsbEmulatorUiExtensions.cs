@@ -16,12 +16,12 @@ public static class AsbEmulatorUiResourceExtensions
     /// Adds the ASB Emulator UI to the Azure Service Bus emulator resource, displaying an "Explorer UI" link on the emulator resource in the Aspire dashboard
     /// </summary>
     /// <param name="builder">The resource builder for the Azure Service Bus emulator</param>
-    /// <param name="httpPort">The HTTP port for the UI (default: 8000)</param>
+    /// <param name="httpPort">The HTTP port for the UI. If null, Aspire assigns an available external port automatically.</param>
     /// <param name="hideEmulatorResourceinAspireDashboard">Whether to hide the ASB Emulator resource in the Aspire dashboard, unhide if you need to debug via resource logs etc (default: true)</param>
     /// <returns>The resource builder for chaining</returns>
     public static IResourceBuilder<AzureServiceBusEmulatorResource> WithUi(
         this IResourceBuilder<AzureServiceBusEmulatorResource> builder,
-        int httpPort = 8000, bool hideEmulatorResourceinAspireDashboard = true)
+        int? httpPort = null, bool hideEmulatorResourceinAspireDashboard = true)
     {
         var field = typeof(AzureServiceBusEmulatorResource)
             .GetField("_innerResource", BindingFlags.Instance | BindingFlags.NonPublic)
@@ -115,7 +115,7 @@ public static class AsbEmulatorUiResourceExtensions
         this IDistributedApplicationBuilder builder,
         string name,
         IResourceBuilder<AzureServiceBusResource> serviceBusResource,
-        int httpPort = 8000,
+        int? httpPort = null,
         string? defaultImageTag = "1.0.2")
     {       
         // Determine an image tag from the hosting assembly's version information.

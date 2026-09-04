@@ -90,7 +90,7 @@ public class WithUiTests
     }
 
     [Test]
-    public async Task WithUi_ShouldUseDefaultPort8000()
+    public async Task WithUi_WithoutExplicitPort_ShouldAllowAspireToAssignDynamicPort()
     {
         // Arrange
         var builder = DistributedApplication.CreateBuilder();
@@ -106,8 +106,9 @@ public class WithUiTests
 
         var endpoints = uiResource!.Annotations
             .OfType<EndpointAnnotation>()
-            .Where(e => e.Port == 8000);
-        await Assert.That(endpoints).IsNotEmpty();
+            .ToList();
+
+        await Assert.That(endpoints.Any(e => e.Port is null)).IsTrue();
     }
 
     [Test]

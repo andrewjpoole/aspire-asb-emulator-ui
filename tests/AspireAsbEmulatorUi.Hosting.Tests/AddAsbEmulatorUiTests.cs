@@ -44,7 +44,7 @@ public class AddAsbEmulatorUiTests
     }
 
     [Test]
-    public async Task AddAsbEmulatorUi_WithDefaultPort_ShouldUse8000()
+    public async Task AddAsbEmulatorUi_WithDefaultPort_ShouldAllowAspireToAssignDynamicPort()
     {
         // Arrange
         var builder = DistributedApplication.CreateBuilder();
@@ -55,12 +55,12 @@ public class AddAsbEmulatorUiTests
 
         // Assert
         await Assert.That(uiResource).IsNotNull();
-        
+
         var endpoints = uiResource.Resource.Annotations
             .OfType<EndpointAnnotation>()
-            .Where(e => e.Port == 8000);
-        
-        await Assert.That(endpoints).IsNotEmpty();
+            .ToList();
+
+        await Assert.That(endpoints.Any(e => e.Port is null)).IsTrue();
     }
 
     [Test]
