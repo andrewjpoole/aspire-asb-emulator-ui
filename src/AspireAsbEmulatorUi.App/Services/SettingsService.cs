@@ -26,8 +26,7 @@ public class SettingsService
         _settings = new Settings();
 
         // First, try to load from settings override (passed from Aspire AppHost)
-        var settingsOverride = _configuration["AsbEmulatorUi__SettingsOverride"]
-                              ?? _configuration["ASBEMULATORUI__SETTINGSOVERRIDE"];
+        var settingsOverride = _configuration["AsbEmulatorUi:SettingsOverride"];
 
         if (!string.IsNullOrWhiteSpace(settingsOverride))
         {
