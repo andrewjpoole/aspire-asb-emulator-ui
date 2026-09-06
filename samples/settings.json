@@ -1,0 +1,37 @@
+{
+  "ContentTypes": [
+    "application/json",
+    "text/plain"
+  ],
+  "DefaultContentType": "application/json",
+  "CommonApplicationProperties": [
+    {
+      "Key": "Source",
+      "Value": "local-test"
+    }
+  ],
+  "CannedMessages": {
+    "queue-one": {
+      "test event": {
+        "ContentType": "application/json",
+        "Body": "{\n  \"eventId\": \"~newGuid~\",\n  \"eventType\": \"TestEvent\",\n  \"message\": \"Hello from the Aspire ASB Emulator UI\",\n  \"createdAt\": \"~now~\"\n}",
+        "BrokerProperties": {
+          "MessageId": "~newGuid~",
+          "CorrelationId": "~newGuid~"
+        },
+        "ApplicationProperties": {
+          "Source": "local-test",
+          "MessageType": "MT_EVENT"
+        }
+      },
+      "plain text": {
+        "ContentType": "text/plain",
+        "Body": "Test message sent at ~now~.",
+        "BrokerProperties": {},
+        "ApplicationProperties": {
+          "Source": "local-test"
+        }
+      }
+    }
+  }
+}

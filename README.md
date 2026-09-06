@@ -54,7 +54,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var serviceBus = builder
     .AddAzureServiceBus("myservicebus")
-    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent).WithUi());
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent)
+    .WithUi());
 
 builder.Build().Run();
 ```
@@ -89,6 +90,52 @@ var serviceBus = builder
         .WithUi()
         .WithOverridenSettingsFile("settings.json"));
 ```
+
+```json
+//sample settings file:
+{
+  "ContentTypes": [
+    "application/json",
+    "text/plain"
+  ],
+  "DefaultContentType": "application/json",
+  "CommonApplicationProperties": [
+    {
+      "Key": "Source",
+      "Value": "local-test"
+    }
+  ],
+  "CannedMessages": {
+    "queue-one": {
+      "test event": {
+        "ContentType": "application/json",
+        "Body": "{\n  \"eventId\": \"~newGuid~\",\n  \"eventType\": \"TestEvent\",\n  \"message\": \"Hello from the Aspire ASB Emulator UI\",\n  \"createdAt\": \"~now~\"\n}",
+        "BrokerProperties": {
+          "MessageId": "~newGuid~",
+          "CorrelationId": "~newGuid~"
+        },
+        "ApplicationProperties": {
+          "Source": "local-test",
+          "MessageType": "MT_EVENT"
+        }
+      },
+      "plain text": {
+        "ContentType": "text/plain",
+        "Body": "Test message sent at ~now~.",
+        "BrokerProperties": {},
+        "ApplicationProperties": {
+          "Source": "local-test"
+        }
+      }
+    }
+  }
+}
+
+```
+
+Use either `WithOverridenSettingsFile()` or `WithCannedMessages()` for a UI resource, not both.
+
+You can also export these settings from the UI.
 
 #### Using `AddAsbEmulatorUi()` (standalone resource)
 
@@ -149,7 +196,7 @@ Use placeholders in message bodies for dynamic test data:
 - **Topics**: Send → Topic → Subscriptions → Receive ✅
   - Send messages **TO topics** (not subscriptions)
   - Topics automatically distribute to subscriptions
-  - Subscriptions are hidden in the UI (by design)
+  - Subscriptions appear beneath their parent topic in the UI
   - Topic active count may show 0 (messages are in subscriptions)
 
 ## Tech Stack
@@ -158,10 +205,6 @@ Use placeholders in message bodies for dynamic test data:
 - **Monaco Editor** - VS Code-powered editing
 - **Azure Service Bus Client SDK** - Native ASB operations
 - **.NET 10** - Latest .NET
-
-## Documentation
-- [PlaceholderSyntax.md](docs/PlaceholderSyntax.md) - Complete placeholder reference
-- [FeatureGuide.md](docs/FeatureGuide.md) - Detailed feature documentation
 
 ## API
 

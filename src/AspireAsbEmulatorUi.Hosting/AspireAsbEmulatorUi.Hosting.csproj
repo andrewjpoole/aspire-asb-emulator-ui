@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.27</Version>
+	<Version>1.0.28</Version>
 	<PackageReleaseNotes>
+		1.0.28 Updated readme and version of Aspire AppHost
 		1.0.27 Allow Aspire to assign a free external port by default while keeping explicit custom ports supported.
 		1.0.26 Allow null port to allow Aspire to set and some package upgrade.
 		1.0.25 Nest emulatorUI under the emulator via .WithUI() and some package upgrades

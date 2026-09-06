@@ -1,11 +1,27 @@
 
+using AspireAsbEmulatorUi.Models;
+
 var builder = DistributedApplication.CreateBuilder(args);
+
+// Uncomment to test .WithCannedMressages(cannedMessages));
+// var cannedMessages = new Dictionary<string, Dictionary<string, CannedMessage>>
+// {
+//     ["queue-one"] = new()
+//     {
+//         ["scenario1"] = new CannedMessage
+//         {
+//             ContentType = "application/json",
+//             Body = "{\"canned meessages test\": \"data\"}"
+//         }
+//     }
+// };
 
 // Add Azure Service Bus and configure it to run with the emulator
 var serviceBus = builder
     .AddAzureServiceBus("myservicebus")
-    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
-        //.WithUi(hideEmulatorResourceinAspireDashboard: false));
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent)
+        .WithUi(hideEmulatorResourceinAspireDashboard: false)
+            .WithOverridenSettingsFile("settings.json"));
 
 serviceBus.AddServiceBusQueue("queue-one");
 serviceBus.AddServiceBusQueue("queue-two");
@@ -27,20 +43,16 @@ topic.AddServiceBusSubscription("sub1")
          subscription.ForwardTo = "topic-sub1-fwd";
      });
 
-// Uncomment to test UI pulled from docker
-//     builder.AddAsbEmulatorUi("asb-ui", serviceBus)
-//            .WithOverridenSettingsFile("settings.json");
-
-// uncomment to test UI as a local project resource, rather than pulll from docker etc
-var asbEmulatorUiResourceBuilder = builder.AddProject<Projects.AspireAsbEmulatorUi_App>("asb-ui")
-    .WithReference(serviceBus)
-    .WaitFor(serviceBus)
-    .ExcludeFromManifest()
-    .WithEnvironment(async (context) =>
-    {
-        // Can't use builder extension pattern as this will be a local ProjectResource rather than a AsbEmulatorUiResource.
-        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
-    }); 
+// uncomment to test UI as a local project resource, rather than pulll from docker etc, for testing new features before merge etc.
+// var asbEmulatorUiResourceBuilder = builder.AddProject<Projects.AspireAsbEmulatorUi_App>("asb-ui")
+//     .WithReference(serviceBus)
+//     .WaitFor(serviceBus)
+//     .ExcludeFromManifest()
+//     .WithEnvironment(async (context) =>
+//     {
+//         // Can't use builder extension pattern as this will be a local ProjectResource rather than a AsbEmulatorUiResource.
+//         await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
+//     }); 
 
 
 // Add MessageHandler console app to process messages from queue-one
