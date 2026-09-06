@@ -4,8 +4,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 // Add Azure Service Bus and configure it to run with the emulator
 var serviceBus = builder
     .AddAzureServiceBus("myservicebus")
-    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent)
-        .WithUi(hideEmulatorResourceinAspireDashboard: false));
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
+        //.WithUi(hideEmulatorResourceinAspireDashboard: false));
 
 serviceBus.AddServiceBusQueue("queue-one");
 serviceBus.AddServiceBusQueue("queue-two");
@@ -27,32 +27,25 @@ topic.AddServiceBusSubscription("sub1")
          subscription.ForwardTo = "topic-sub1-fwd";
      });
 
-// const bool testUsingContainerAndExtension = false;
-
-// if (testUsingContainerAndExtension)
-// {
+// Uncomment to test UI pulled from docker
 //     builder.AddAsbEmulatorUi("asb-ui", serviceBus)
 //            .WithOverridenSettingsFile("settings.json");
-// }
-// else 
-// {
-//     // Add the local project resource
-//     var asbEmulatorUiResourceBuilder = builder.AddProject<Projects.AspireAsbEmulatorUi_App>("asb-ui")
-//         .WithReference(serviceBus)
-//         .WaitFor(serviceBus)
-//         .ExcludeFromManifest()
-//         .WithEnvironment(async (context) =>
-//         {
-//             // Can't use builder extension pattern as this will be a local ProjectResource rather than a AsbEmulatorUiResource.
-//             await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
-//         }); 
-// }
+
+// uncomment to test UI as a local project resource, rather than pulll from docker etc
+var asbEmulatorUiResourceBuilder = builder.AddProject<Projects.AspireAsbEmulatorUi_App>("asb-ui")
+    .WithReference(serviceBus)
+    .WaitFor(serviceBus)
+    .ExcludeFromManifest()
+    .WithEnvironment(async (context) =>
+    {
+        // Can't use builder extension pattern as this will be a local ProjectResource rather than a AsbEmulatorUiResource.
+        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
+    }); 
+
 
 // Add MessageHandler console app to process messages from queue-one
 builder.AddProject<Projects.MessageHandler>("message-handler")
     .WithReference(serviceBus)
     .WaitFor(serviceBus);
-
-
 
 builder.Build().Run();

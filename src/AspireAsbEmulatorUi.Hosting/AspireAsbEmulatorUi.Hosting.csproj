@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.25</Version>
+	<Version>1.0.26</Version>
 	<PackageReleaseNotes>
+		1.0.26 Allow null port to allow Aspire to set and some package upgrade.
 		1.0.25 Nest emulatorUI under the emulator via .WithUI() and some package upgrades
 		1.0.24 Fixed formatting issue with very long entity names
 		1.0.21 Fix issue with monaco editor
@@ -37,8 +38,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.4.6" />
-    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.4.6" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="13.5.3" />
+    <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.5.3" />
   </ItemGroup>  
 
 	<ItemGroup>
