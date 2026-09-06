@@ -8,13 +8,16 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["AspireAsbEmulatorUi.App.styles.css"]" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com" onerror="document.getElementById('tailwind-load-error').hidden = false;"></script>
     <link href="_content/BlazorMonaco/lib/monaco-editor/min/vs/editor/editor.main.css" rel="stylesheet" />
     <ImportMap />
     <HeadOutlet />
 </head>
 
 <body class="bg-slate-900 text-slate-100 font-mono">
+    <div id="tailwind-load-error" hidden role="alert" style="padding: 1rem; background: #7f1d1d; color: #fff; font-family: sans-serif; text-align: center;">
+        We couldn't load the page styles. Please check your connection and refresh the page.
+    </div>
     <Routes />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
