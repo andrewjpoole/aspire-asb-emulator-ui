@@ -84,6 +84,7 @@ jobs:
           context: ./src
           file: ./src/AspireAsbEmulatorUi.App/Dockerfile
           platforms: linux/amd64,linux/arm64
+          pull: true
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ steps.read_version.outputs.image_tag }}
