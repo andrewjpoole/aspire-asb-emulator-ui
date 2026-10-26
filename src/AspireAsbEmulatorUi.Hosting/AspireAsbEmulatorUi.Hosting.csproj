@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.28</Version>
+	<Version>1.0.29</Version>
 	<PackageReleaseNotes>
+		1.0.29 Refresh container base images on every build to pick up .NET security patches.
 		1.0.28 Updated readme and version of Aspire AppHost
 		1.0.27 Allow Aspire to assign a free external port by default while keeping explicit custom ports supported.
 		1.0.26 Allow null port to allow Aspire to set and some package upgrade.
