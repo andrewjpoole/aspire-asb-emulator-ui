@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.29</Version>
+	<Version>1.0.30</Version>
 	<PackageReleaseNotes>
+		1.0.30 Add temporary security pins for MessagePack, System.IdentityModel.Tokens.Jwt and YamlDotNet.
 		1.0.29 Refresh container base images on every build to pick up .NET security patches.
 		1.0.28 Updated readme and version of Aspire AppHost
 		1.0.27 Allow Aspire to assign a free external port by default while keeping explicit custom ports supported.
@@ -43,7 +44,14 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.5.3" />
     <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.5.3" />
-  </ItemGroup>  
+  </ItemGroup>
+
+  <!-- Temporary security pins. Remove once upstream dependencies
+       resolve these packages to patched versions or newer. -->
+  <ItemGroup Label="SecurityPins">
+    <PackageReference Include="MessagePack" Version="2.5.307" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
+  </ItemGroup>
 
 	<ItemGroup>
 		<None Include="..\..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\..\README.md')" />
