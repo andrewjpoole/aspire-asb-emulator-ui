@@ -175,6 +175,13 @@ public static class AsbEmulatorUiResourceExtensions
 
         context.EnvironmentVariables["asb-resource-name"] = sbResource.Name;
 
+        // Aspire 13 exposes the emulator management API on its health endpoint (port 5300).
+        // Keep this optional for SDK versions/resources without that endpoint.
+        if (sbResource.Annotations.OfType<EndpointAnnotation>().Any(e => e.Name == "emulatorhealth"))
+        {
+            context.EnvironmentVariables["asb-management-endpoint"] = serviceBusResource.GetEndpoint("emulatorhealth");
+        }
+
         if (!sqlAsbContainerResource.TryGetUrls(out var urls) || urls == null || !urls.Any())
             throw new Exception("Unable to get any SQL endpoint URLs from ASB emulator resource.");
 

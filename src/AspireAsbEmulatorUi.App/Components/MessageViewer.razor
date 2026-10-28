@@ -5,37 +5,63 @@
 @inject ServiceBusService Bus
 @inject SettingsService SettingsService
 @inject IJSRuntime JS
+@inject ILogger<MessageViewer> Logger
+@inject ReceivedMessageCircuitHandler CircuitLifetime
+@implements IAsyncDisposable
 
 <div>
     <h3 class="text-lg font-medium mb-2">Viewer for @DisplayName</h3>
 
-    <div class="flex items-center gap-3 mb-3">
+    <div class="flex flex-wrap items-center gap-3 mb-3">
         <div class="flex rounded bg-slate-700 p-1">
-            <button class=@($"px-3 py-1 rounded-l text-sm {(_isDlqSelected ? "text-slate-400" : "bg-slate-600 text-white")}") @onclick="() => SelectDlq(false)">Main</button>
-            <button class=@($"px-3 py-1 rounded-r text-sm {(_isDlqSelected ? "bg-slate-600 text-white" : "text-slate-400")}") @onclick="() => SelectDlq(true)">Dead-letter</button>
+            <button class=@($"px-3 py-1 rounded-l text-sm {(_isDlqSelected ? "text-slate-400" : "bg-slate-600 text-white")}") disabled="@ViewerBusy" @onclick="() => SelectDlq(false)">Main</button>
+            <button class=@($"px-3 py-1 rounded-r text-sm {(_isDlqSelected ? "bg-slate-600 text-white" : "text-slate-400")}") disabled="@ViewerBusy" @onclick="() => SelectDlq(true)">Dead-letter</button>
         </div>
 
-        <!-- Peek/Receive toggle -->
-        <div class="flex rounded bg-slate-700 p-1 items-center">
-            <button class=@($"px-3 py-1 rounded-l text-sm {(!_isReceive ? "bg-slate-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(false)">Peek</button>
-            <button class=@($"px-3 py-1 rounded-r text-sm {(_isReceive ? "bg-red-600 text-white" : "text-slate-200")}") @onclick="() => SelectReceive(true)">Receive</button>
-
-            @* Watch checkbox visible only in Peek mode *@
-            <!-- watch toggle moved next to Load button -->
+        <div role="radiogroup" aria-label="Message operation" class="flex rounded bg-slate-700 p-1 items-center">
+            @foreach (var mode in Enum.GetValues<ViewerMode>())
+            {
+                <button role="radio" aria-checked="@(_mode == mode ? "true" : "false")" class=@($"px-3 py-1 rounded text-sm {(_mode == mode ? (mode == ViewerMode.Peek ? "bg-slate-600 text-white" : "bg-red-600 text-white") : "text-slate-200")}") disabled="@ViewerBusy" title="@ModeTooltip(mode)" @onclick="() => SelectMode(mode)">@mode</button>
+            }
         </div>
 
-        <input type="number" min="1" max="100" @bind="_maxMessages" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" />
-        @if (!_watchEnabled)
+        @if (!_isDlqSelected && RequiresSession is null)
         {
-            <button class="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2" @onclick="LoadMessages">
-                <span>Load</span>
-            </button>
+            <label class="text-sm text-slate-400" title="Session configuration could not be detected">
+                <input type="checkbox" @bind="_manualSessionEnabled" @bind:after="SelectionChanged" disabled="@ViewerBusy" /> Session-enabled
+            </label>
         }
-        @if (!_isReceive)
+        @if (UsesSessions)
+        {
+            <select aria-label="Session scope" @bind="_sessionScope" @bind:after="SelectionChanged" disabled="@ViewerBusy" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-200">
+                @if (_mode != ViewerMode.Receive)
+                {
+                    <option value="@ViewerSessionScope.All">AllSessions</option>
+                }
+                <option value="@ViewerSessionScope.NextAvailableSession">NextAvailableSession</option>
+                <option value="@ViewerSessionScope.SessionId">SpecificSession</option>
+            </select>
+            @if (_sessionScope == ViewerSessionScope.SessionId)
+            {
+                <input aria-label="Session ID" @bind="_sessionId" @bind:after="SelectionChanged" placeholder="enter sessionId..." disabled="@ViewerBusy" class="w-40 bg-slate-800 border border-slate-700 rounded px-2 py-1" />
+            }
+        }
+        @if (_mode != ViewerMode.Clear)
+        {
+            <input aria-label="Maximum messages" type="number" min="1" max="100" @bind="_maxMessages" disabled="@ViewerBusy" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1" />
+        }
+        <div class="inline-flex flex-nowrap shrink-0 items-center gap-2">
+            <button @ref="_clearButton" class=@($"px-3 py-1 rounded text-white whitespace-nowrap {(_mode == ViewerMode.Clear ? "bg-red-700 hover:bg-red-800" : "bg-blue-600 hover:bg-blue-700")}") disabled="@(ViewerBusy || _watchEnabled)" title="@(_mode == ViewerMode.Clear ? ClearTooltip : "Load messages for the selected scope")" @onclick="ExecuteAction">Go</button>
+            @if (_loadingMessages)
+            {
+                <button class="px-3 py-1 rounded border border-slate-600" @onclick="CancelOperation">Cancel</button>
+            }
+        </div>
+        @if (_mode == ViewerMode.Peek)
         {
             <div class="ml-3 flex items-center text-sm text-slate-200">
                 <label class="inline-flex items-center cursor-pointer" title="Auto load every 3 seconds for 5 minutes">
-                    <input type="checkbox" class="sr-only peer" @bind="WatchToggle" />
+                    <input type="checkbox" class="sr-only peer" @bind="WatchToggle" disabled="@ViewerBusy" />
                     <div class="relative w-9 h-5 bg-neutral-quaternary border-2 border-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-soft rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-buffer after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand"></div>
                     <span class="select-none ms-3 text-sm font-medium text-heading">Watch</span>
                 </label>
@@ -58,11 +84,37 @@
         </div>
     </div>
 
-    @if (_isReceive)
+    @if (_mode == ViewerMode.Clear)
     {
-        <div class="rounded p-3 mb-3 bg-red-800 text-red-100">
-            Warning: Receive mode is destructive and will remove messages from the queue.
+        <div class="rounded p-3 mb-3 bg-red-800 text-red-100">Clear permanently removes messages from the selected scope.</div>
+    }
+    else if (_mode == ViewerMode.Receive)
+    {
+        <div class="rounded p-3 mb-3 bg-slate-800 text-slate-200">
+            Receive locks messages temporarily. Complete deletes a message; Dead-Letter moves it to the DLQ.
+            Reloading, navigating away, or letting unprocessed locks expire allows redelivery and can increase delivery counts, eventually causing automatic dead-lettering. Locks are not renewed.
+            @if (_isDlqSelected)
+            {
+                <p class="mt-2">Replay sends a new copy before removing the DLQ message; failures can leave duplicates. Subscription DLQs replay to the parent topic and can reach all matching subscriptions.</p>
+            }
         </div>
+    }
+    @if (!string.IsNullOrEmpty(_acceptedSessionId))
+    {
+        <div class="text-sm text-slate-200 mb-3">Selected session: <span class="font-mono">@_acceptedSessionId</span></div>
+    }
+
+    @if (!string.IsNullOrEmpty(_operationResult))
+    {
+        <div role="status" class="rounded p-3 mb-3 bg-slate-800 text-slate-200">@_operationResult</div>
+    }
+    @if (_mode == ViewerMode.Peek)
+    {
+        <p class="text-sm text-slate-400 mb-3">Peek is read-only. Use Receive to lock messages before choosing Dead-Letter or Complete.</p>
+    }
+    @if (UsesSessions && _mode == ViewerMode.Peek && _sessionScope == ViewerSessionScope.NextAvailableSession)
+    {
+        <p class="text-sm text-slate-400 mb-3">NextAvailableSession briefly locks an available active session while peeking; no messages are removed.</p>
     }
 
     <div class="space-y-3">
@@ -78,21 +130,41 @@
         {
             foreach (var m in _messages)
             {
-                <div class="bg-slate-700 p-3 rounded">
+                var lockedEntry = FindLockedEntry(m);
+                var settled = lockedEntry?.State is LockedMessageState.Completed or LockedMessageState.DeadLettered;
+                <div @key="m" class=@($"bg-slate-700 p-3 rounded {(settled ? "border border-slate-500 opacity-70" : string.Empty)}")>
                     <div class="flex items-start justify-between">
                         <div>
                             <div class="text-sm font-semibold">Sequence: @m.SequenceNumber</div>
                             <div class="text-xs text-slate-400">MessageId: @m.MessageId</div>
                             <div class="text-xs text-slate-400">Correlation: @m.CorrelationId</div>
+                            @if (!string.IsNullOrEmpty(m.SessionId))
+                            {
+                                <div class="text-sm text-slate-200">Session ID: @m.SessionId</div>
+                            }
                             <div class="text-xs text-slate-400">Enqueued: @m.EnqueuedTime</div>
+                            @if (lockedEntry is not null)
+                            {
+                                <div class=@($"inline-block rounded px-2 py-1 text-sm font-semibold {(settled ? "bg-green-900 text-green-100" : "bg-slate-800 text-slate-200")}") role="status">@(_replayedHandles.Contains(lockedEntry.Handle) ? "Replayed" : lockedEntry.State.ToString())</div>
+                                <div class="text-xs text-slate-400">Lock expires: @lockedEntry.LockedUntil.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")</div>
+                                <div class="text-xs text-slate-400">Delivery count: @m.BrokerProperties.GetValueOrDefault("DeliveryCount")</div>
+                            }
                         </div>
                         <div class="flex items-center gap-2">
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleBroker(m)" title="Show Broker Props">Broker</button>
                             <button class="text-sm px-2 py-1 rounded border border-slate-600" @onclick:stopPropagation="true" @onclick="() => ToggleApp(m)" title="Show Application Props">Application</button>
                             <button class="text-sm px-2 py-1 rounded bg-slate-600 text-white hover:bg-slate-700" @onclick:stopPropagation="true" @onclick="() => CopyMessage(m)" title="Copy message to clipboard">Copy</button>
-                            @if (!_isReceive && !_isDlqSelected)
+                            @if (_mode == ViewerMode.Receive && _receivedBatch is { } batch && lockedEntry is not null)
                             {
-                                <button class="text-sm px-2 py-1 rounded bg-slate-600 text-white hover:bg-red-700" @onclick:stopPropagation="true" @onclick="() => DeadLetterMessage(m)" title="Move message to dead-letter queue">Dead-letter</button>
+                                @if (_isDlqSelected)
+                                {
+                                    <button class="text-sm px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed" disabled="@(ViewerBusy || !batch.CanReplay(lockedEntry.Handle))" @onclick="() => ReplayMessage(batch, lockedEntry)" title="Send a new copy to the original destination, then complete this DLQ message">Replay</button>
+                                }
+                                else
+                                {
+                                    <button class="text-sm px-2 py-1 rounded bg-red-700 text-white hover:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed" disabled="@(ViewerBusy || !batch.CanSettle(lockedEntry.Handle))" @onclick="() => SettleMessage(batch, lockedEntry, true)" title="Dead-letter this received message">Dead-Letter</button>
+                                }
+                                <button class="text-sm px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed" disabled="@(ViewerBusy || !batch.CanSettle(lockedEntry.Handle))" @onclick="() => SettleMessage(batch, lockedEntry, false)" title="Delete this received message">Complete</button>
                             }
                             <button class="text-sm px-2 py-1 rounded bg-slate-600 text-white hover:bg-blue-700" @onclick:stopPropagation="true" @onclick="() => SaveMessageAsCanned(m)" title="Save as canned message">Save as Canned</button>
                         </div>
@@ -133,6 +205,21 @@
     </div>
 </div>
 
+@if (_pendingConfirmation is not null)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @onclick="DismissConfirmation" @onkeydown="HandleConfirmationKeyDown">
+        <div role="dialog" aria-modal="true" aria-labelledby="confirmation-title" aria-describedby="confirmation-description" class="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4" @onclick:stopPropagation="true">
+            <h4 id="confirmation-title" class="text-lg font-semibold mb-4">@_pendingConfirmation.Kind messages?</h4>
+            <p id="confirmation-description" class="text-sm text-slate-200">@_pendingConfirmation.Description</p>
+            <p class="text-sm text-red-200 mt-3">@_pendingConfirmation.Warning</p>
+            <div class="flex gap-2 mt-4">
+                <button @ref="_clearCancelButton" class="px-4 py-2 rounded bg-slate-600 text-white hover:bg-slate-500" @onclick="DismissConfirmation">Cancel</button>
+                <button class="px-4 py-2 rounded bg-red-700 text-white hover:bg-red-800" @onclick="ConfirmOperation">@_pendingConfirmation.Kind</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_showSaveDialog)
 {
     <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @onclick="() => _showSaveDialog = false">
@@ -170,15 +257,94 @@
     [Parameter] public string SelectedEntity { get; set; } = string.Empty;
     [Parameter] public string DisplayName { get; set; } = string.Empty;
     [Parameter] public EventCallback OnEntityChanged { get; set; }
+    [Parameter] public bool? RequiresSession { get; set; }
 
     private int _maxMessages = 20;
     private List<DisplayedMessage>? _messages;
+    private LockedMessageBatch? _receivedBatch;
+    private System.Threading.Timer? _lockTimer;
+    private bool _releasingBatch;
+
+    private LockedMessageEntry? FindLockedEntry(DisplayedMessage message) =>
+        _receivedBatch?.Entries.FirstOrDefault(entry => ReferenceEquals(entry.Message, message));
     private bool _isDlqSelected = false;
-    private bool _isReceive = false; // false = peek, true = receive
+    private ViewerMode _mode;
     private bool _watchEnabled = false;
     private System.Threading.Timer? _watchTimer;
     private bool _loadingMessages = false;
     private DateTime? _lastMessagesRefreshed;
+    private string? _previousEntity;
+    private ViewerSessionScope _sessionScope;
+    private bool _manualSessionEnabled;
+    private string? _acceptedSessionId;
+    private string _sessionId = string.Empty;
+    private string _operationResult = string.Empty;
+    private CancellationTokenSource? _operationCancellation;
+    private int _operationGeneration;
+    private bool _disposed;
+
+    private bool UsesSessions => ViewerSessionSelection.UsesSessions(RequiresSession, _manualSessionEnabled, _isDlqSelected);
+    private SessionReceiveOptions SessionOptions => ViewerSessionSelection.ReceiverOptions(UsesSessions, _sessionScope, _sessionId);
+
+    private PendingConfirmation? _pendingConfirmation;
+    private ElementReference _clearButton;
+    private ElementReference _clearCancelButton;
+    private bool _focusClearDialog;
+    private bool _restoreClearFocus;
+    private bool ViewerBusy => _loadingMessages || _releasingBatch || _pendingConfirmation is not null;
+
+    private enum ConfirmationKind { Receive, Clear }
+    private sealed record PendingConfirmation(ConfirmationKind Kind, string Target, SessionReceiveOptions? Options,
+        bool AllSessions, int Generation, string Description, string Warning, int MaxMessages = 20, LockedMessageBatch? ReceivedDlqBatch = null);
+    private readonly HashSet<LockedMessageHandle> _replayedHandles = new();
+
+    private string ModeTooltip(ViewerMode mode) => mode switch
+    {
+        ViewerMode.Peek => UsesSessions && _sessionScope == ViewerSessionScope.NextAvailableSession
+            ? "Peek at messages without receiving them. NextAvailableSession briefly locks the selected session."
+            : "Peek at messages without locking or receiving them.",
+        ViewerMode.Receive => _isDlqSelected
+            ? "Receive and lock messages to Complete or Replay them."
+            : "Receive and lock messages to Complete or Dead-Letter them.",
+        ViewerMode.Clear => "Clear currently available messages from the current scope without displaying them. Locked, scheduled or deferred messages may remain.",
+        _ => string.Empty
+    };
+
+    private string ClearTooltip => _isDlqSelected ? "Clear currently available messages from the DLQ" : !UsesSessions
+        ? "Clear currently available messages from Main"
+        : _sessionScope switch
+        {
+            ViewerSessionScope.All => "Clear currently available messages from all available sessions",
+            ViewerSessionScope.NextAvailableSession => "Clear currently available messages from the next available session only",
+            _ => $"Clear currently available messages from session '{_sessionId}' only"
+        };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusClearDialog && _pendingConfirmation is not null)
+        {
+            _focusClearDialog = false;
+            await _clearCancelButton.FocusAsync();
+        }
+        else if (_restoreClearFocus && !_disposed)
+        {
+            _restoreClearFocus = false;
+            await _clearButton.FocusAsync();
+        }
+    }
+
+    private void DismissConfirmation()
+    {
+        _pendingConfirmation = null;
+        _focusClearDialog = false;
+        _restoreClearFocus = true;
+        ApplySessionMetadata();
+    }
+
+    private void HandleConfirmationKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") DismissConfirmation();
+    }
 
     private HashSet<long> _showBroker = new();
     private HashSet<long> _showApp = new();
@@ -190,31 +356,150 @@
     private bool _saveResultSuccess = false;
     private DisplayedMessage? _messageToSave = null;
 
-    protected override void OnParametersSet()
-    {
-        // Clear messages when selection changes
-        _messages = null;
-    }
+    protected override void OnInitialized() => CircuitLifetime.Disconnected += OnCircuitDisconnected;
 
-    private void SelectDlq(bool dlq)
+    private async Task OnCircuitDisconnected()
     {
-        _isDlqSelected = dlq;
-        _messages = null;
-    }
-
-    private void SelectReceive(bool receive)
-    {
-        _isReceive = receive;
-        _messages = null;
-        // Disable watch when switching into receive (watch only valid for peek)
-        if (_isReceive)
+        if (_disposed) return;
+        await InvokeAsync(async () =>
         {
+            _operationGeneration++;
+            CancelOperation();
+            _pendingConfirmation = null;
             StopWatch();
+            ResetMessages();
+            await ReleaseReceivedBatch();
+            if (!_disposed) StateHasChanged();
+        });
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_previousEntity, SelectedEntity, StringComparison.Ordinal))
+        {
+            if (!ViewerBusy) ApplySessionMetadata();
+            return;
         }
+        _previousEntity = SelectedEntity;
+        _operationGeneration++;
+        CancelOperation();
+        _pendingConfirmation = null;
+        _focusClearDialog = false;
+        _restoreClearFocus = false;
+        StopWatch();
+        _mode = ViewerMode.Peek;
+        _sessionScope = ViewerSessionScope.All;
+        _manualSessionEnabled = false;
+        _sessionId = string.Empty;
+        _lastMessagesRefreshed = null;
+        _showSaveDialog = false;
+        ResetMessages();
+        await ReleaseReceivedBatch();
+    }
+
+    private void ApplySessionMetadata()
+    {
+        _sessionScope = ViewerSessionSelection.Normalize(_mode, _sessionScope);
+    }
+
+    private void ResetMessages()
+    {
+        _messages = null;
+        _replayedHandles.Clear();
+        _acceptedSessionId = null;
+        _operationResult = string.Empty;
+        _showBroker.Clear();
+        _showApp.Clear();
+    }
+
+    private void CancelOperation() => _operationCancellation?.Cancel();
+
+    private bool IsCurrentOperation(int generation) => !_disposed && generation == _operationGeneration;
+
+    private CancellationTokenSource BeginOperation()
+    {
+        _loadingMessages = true;
+        _operationResult = string.Empty;
+        return _operationCancellation = new CancellationTokenSource();
+    }
+
+    private void EndOperation(CancellationTokenSource cancellation)
+    {
+        if (ReferenceEquals(_operationCancellation, cancellation))
+        {
+            _operationCancellation = null;
+            _loadingMessages = false;
+            ApplySessionMetadata();
+        }
+        cancellation.Dispose();
+    }
+
+    private async Task SelectDlq(bool dlq)
+    {
+        if (ViewerBusy) return;
+        _isDlqSelected = dlq;
+        await SelectionChanged();
+    }
+
+    private async Task SelectMode(ViewerMode mode)
+    {
+        if (ViewerBusy) return;
+        var preserveBatch = ViewerSessionSelection.PreserveReceivedBatch(_isDlqSelected, _mode, mode);
+        _mode = mode;
+        if (preserveBatch)
+        {
+            _operationGeneration++;
+            StopWatch();
+            ApplySessionMetadata();
+            _operationResult = string.Empty;
+        }
+        else await SelectionChanged();
+    }
+
+    private async Task SelectionChanged()
+    {
+        _operationGeneration++;
+        StopWatch();
+        ApplySessionMetadata();
+        ResetMessages();
+        await ReleaseReceivedBatch();
+    }
+
+    private Task ExecuteAction()
+    {
+        if (_mode == ViewerMode.Clear) RequestClear();
+        else if (_mode == ViewerMode.Receive) RequestReceive();
+        else return LoadMessages();
+        return Task.CompletedTask;
+    }
+
+    private void RequestReceive()
+    {
+        if (_disposed || ViewerBusy || string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        var options = SessionOptions;
+        if (options.Mode == SessionReceiveMode.Specified && string.IsNullOrWhiteSpace(options.SessionId))
+        {
+            _operationResult = "Enter a session ID before receiving.";
+            return;
+        }
+        var target = SelectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
+        var scope = _isDlqSelected ? "DLQ" : "Main";
+        var session = options.Mode switch
+        {
+            SessionReceiveMode.NextAvailable => " from the next available session",
+            SessionReceiveMode.Specified => $" from session '{options.SessionId}'",
+            _ => string.Empty
+        };
+        _pendingConfirmation = new(ConfirmationKind.Receive, target, options, false, _operationGeneration,
+            $"Receive and lock up to {Math.Clamp(_maxMessages, 1, 100)} messages from {DisplayName} ({scope}){session}?",
+            "Messages are not deleted until Complete or Replay. Dead-Letter moves a message to the DLQ. Outstanding locks from the previous Load will be closed; expiry/redelivery can increase delivery counts and cause automatic dead-lettering. Locks are not renewed.",
+            Math.Clamp(_maxMessages, 1, 100));
+        _focusClearDialog = true;
     }
 
     private void SetWatch(bool enabled)
     {
+        if (_disposed || ViewerBusy) return;
         _watchEnabled = enabled;
         if (_watchEnabled)
         {
@@ -242,7 +527,7 @@
         var end = DateTime.UtcNow + TimeSpan.FromMinutes(5);
         _watchTimer = new System.Threading.Timer(async _ =>
         {
-            if (DateTime.UtcNow >= end || _isReceive)
+            if (_disposed || !_watchEnabled || DateTime.UtcNow >= end || _mode != ViewerMode.Peek)
             {
                 StopWatch();
                 return;
@@ -250,7 +535,10 @@
 
             try
             {
-                await InvokeAsync(async () => await LoadMessages());
+                await InvokeAsync(async () =>
+                {
+                    if (_watchEnabled && !_disposed) await LoadMessages();
+                });
             }
             catch { }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(3));
@@ -261,12 +549,58 @@
         _watchTimer?.Dispose();
         _watchTimer = null;
         _watchEnabled = false;
-        InvokeAsync(StateHasChanged);
+        if (!_disposed) _ = InvokeAsync(StateHasChanged);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
+        CircuitLifetime.Disconnected -= OnCircuitDisconnected;
+        _disposed = true;
+        _operationGeneration++;
+        CancelOperation();
+        _pendingConfirmation = null;
         _watchTimer?.Dispose();
+        await ReleaseReceivedBatch();
+    }
+
+    private async Task ReleaseReceivedBatch()
+    {
+        _lockTimer?.Dispose();
+        _lockTimer = null;
+        var batch = _receivedBatch;
+        _receivedBatch = null;
+        if (batch is null) return;
+        _releasingBatch = true;
+        try { await batch.DisposeAsync(); }
+        finally { _releasingBatch = false; }
+    }
+
+    private void StartLockTimer(LockedMessageBatch batch)
+    {
+        _lockTimer?.Dispose();
+        _lockTimer = new System.Threading.Timer(async _ =>
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    if (_disposed || _loadingMessages || _releasingBatch || !ReferenceEquals(batch, _receivedBatch)) return;
+                    await batch.RefreshExpiryAsync();
+                    if (_disposed || !ReferenceEquals(batch, _receivedBatch)) return;
+                    if (!batch.Entries.Any(entry => batch.CanSettle(entry.Handle)))
+                    {
+                        _lockTimer?.Dispose();
+                        _lockTimer = null;
+                        await batch.DisposeAsync();
+                    }
+                    if (!_disposed) StateHasChanged();
+                });
+            }
+            catch (Exception ex)
+            {
+                if (!_disposed) Logger.LogDebug(ex, "Could not refresh received message lock status");
+            }
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
 
     private void ToggleBroker(DisplayedMessage m)
@@ -281,49 +615,289 @@
         else _showApp.Add(m.SequenceNumber);
     }
 
-    private async Task LoadMessages()
+    private async Task LoadMessages(PendingConfirmation? confirmedReceive = null)
     {
-        _loadingMessages = true;
-        await InvokeAsync(StateHasChanged);
-
-        if (string.IsNullOrWhiteSpace(SelectedEntity))
-        {
-            _loadingMessages = false;
-            await InvokeAsync(StateHasChanged);
-            return;
-        }
-
-        _messages = new List<DisplayedMessage>();
+        if (_disposed || ViewerBusy || _mode == ViewerMode.Clear || string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        if (_mode == ViewerMode.Receive && confirmedReceive is null) return;
+        var target = confirmedReceive?.Target ?? SelectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
+        var receive = confirmedReceive is not null;
+        var nextSessionPeek = UsesSessions && _sessionScope == ViewerSessionScope.NextAvailableSession;
+        var peekSessionId = UsesSessions && _sessionScope == ViewerSessionScope.SessionId ? _sessionId : null;
+        var sessionOptions = confirmedReceive?.Options;
+        var maxMessages = confirmedReceive?.MaxMessages ?? Math.Clamp(_maxMessages, 1, 100);
+        var generation = confirmedReceive?.Generation ?? _operationGeneration;
+        if (!IsCurrentOperation(generation)) return;
+        var cancellation = BeginOperation();
+        LockedMessageBatch? candidate = null;
+        _acceptedSessionId = null;
+        _messages = new();
         try
         {
-            var target = SelectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
-            if (!_isReceive)
+            await ReleaseReceivedBatch();
+            if (!IsCurrentOperation(generation) || cancellation.IsCancellationRequested) return;
+            if (!receive)
             {
-                var msgs = await Bus.PeekMessagesAsync(target, _maxMessages);
-                _messages.AddRange(msgs);
+                var result = nextSessionPeek
+                    ? await Bus.PeekNextAvailableSessionAsync(target, maxMessages, cancellation.Token)
+                    : await Bus.PeekMessagesWithSessionAsync(target, maxMessages, peekSessionId, cancellation.Token);
+                if (!IsCurrentOperation(generation)) return;
+                _acceptedSessionId = result.AcceptedSessionId;
+                _messages = result.Messages.ToList();
+                _operationResult = DescribePeek(result, result.AcceptedSessionId ?? peekSessionId);
             }
             else
             {
-                var msgs = await Bus.ReceiveMessagesAsync(target, _maxMessages);
-                _messages.AddRange(msgs);
+                var result = await Bus.ReceiveLockedMessagesAsync(target, maxMessages, sessionOptions, cancellation.Token);
+                candidate = result.Batch;
+                if (!IsCurrentOperation(generation) || cancellation.IsCancellationRequested) return;
+                _acceptedSessionId = result.AcceptedSessionId;
+                _messages = candidate?.Entries.Select(entry => entry.Message).ToList() ?? new();
+                _operationResult = DescribeReceive(result);
+                _receivedBatch = candidate;
+                candidate = null;
+                if (_receivedBatch is not null) StartLockTimer(_receivedBatch);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (IsCurrentOperation(generation)) _operationResult = "Operation cancelled.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not load messages from {Entity}", target);
+            if (IsCurrentOperation(generation)) _operationResult = "Could not load messages. Check the connection and receiver mode.";
+        }
+        finally
+        {
+            if (candidate is not null) await candidate.DisposeAsync();
+            if (IsCurrentOperation(generation)) _lastMessagesRefreshed = DateTime.Now;
+            EndOperation(cancellation);
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
 
-                // If messages were received (deleted), notify parent to refresh entity counts
-                if (msgs.Any() && OnEntityChanged.HasDelegate)
-                {
-                    await Task.Delay(500); // Give the emulator a moment to update
-                    await OnEntityChanged.InvokeAsync();
-                }
+    private void RequestClear()
+    {
+        if (_disposed || ViewerBusy || _mode != ViewerMode.Clear || string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        var allSessions = UsesSessions && _sessionScope == ViewerSessionScope.All;
+        var options = allSessions ? null : SessionOptions;
+        if (options?.Mode == SessionReceiveMode.Specified && string.IsNullOrWhiteSpace(options.SessionId))
+        {
+            _operationResult = "Enter a session ID before clearing.";
+            return;
+        }
+        StopWatch();
+        var target = SelectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
+        var scope = _isDlqSelected ? "DLQ" : "Main";
+        var sessionScope = allSessions ? " across all available sessions" : options?.Mode switch
+        {
+            SessionReceiveMode.NextAvailable => " in the next available session only",
+            SessionReceiveMode.Specified => $" in session '{options.SessionId}' only",
+            _ => string.Empty
+        };
+        _pendingConfirmation = new(ConfirmationKind.Clear, target, options, allSessions, _operationGeneration,
+            $"Permanently delete currently available messages from {DisplayName} ({scope}){sessionScope}?",
+            "This cannot be undone. Clearing includes messages received and locked by this viewer, then currently available messages. It stops after 10,000 messages or 30 seconds; messages locked elsewhere, scheduled or deferred may remain.",
+            ReceivedDlqBatch: _isDlqSelected ? _receivedBatch : null);
+        _focusClearDialog = true;
+    }
+
+    private async Task ConfirmOperation()
+    {
+        var request = _pendingConfirmation;
+        if (request is null || _loadingMessages || !IsCurrentOperation(request.Generation)) return;
+        _pendingConfirmation = null;
+        _focusClearDialog = false;
+        if (request.ReceivedDlqBatch is not null && !ReferenceEquals(request.ReceivedDlqBatch, _receivedBatch)) return;
+        if (request.Kind == ConfirmationKind.Receive)
+        {
+            await LoadMessages(request);
+            if (IsCurrentOperation(request.Generation)) _restoreClearFocus = true;
+            return;
+        }
+        var target = request.Target;
+        var generation = request.Generation;
+        var cancellation = BeginOperation();
+        try
+        {
+            _messages = new();
+            _acceptedSessionId = null;
+            var result = request.ReceivedDlqBatch is { } dlqBatch
+                ? await ReceivedDlqClearOperation.ClearAsync(dlqBatch,
+                    (remaining, token) => Bus.DrainAvailableMessagesAsync(target, remaining, token), cancellation.Token)
+                : request.AllSessions
+                    ? await Bus.DrainAllAvailableSessionsAsync(target, cancellation.Token)
+                    : await Bus.DrainMessagesAsync(target, request.Options, cancellation.Token);
+            if (!IsCurrentOperation(generation)) return;
+            _acceptedSessionId = result.AcceptedSessionId;
+            _operationResult = DescribeDrain(result, request.AllSessions);
+            if (result.DeletedCount > 0 || result.StopReason is DrainStopReason.Failed or DrainStopReason.Cancelled)
+                await RefreshCounts(generation);
+        }
+        catch (OperationCanceledException)
+        {
+            if (IsCurrentOperation(generation)) _operationResult = "Clear cancelled. Messages already removed cannot be restored.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not clear messages from {Entity}", target);
+            if (IsCurrentOperation(generation)) _operationResult = "Clear failed. Messages already removed cannot be restored; check the connection and receiver mode.";
+        }
+        finally
+        {
+            if (request.ReceivedDlqBatch is { } capturedBatch)
+            {
+                if (ReferenceEquals(capturedBatch, _receivedBatch)) await ReleaseReceivedBatch();
+                else await capturedBatch.DisposeAsync();
+            }
+            EndOperation(cancellation);
+            if (IsCurrentOperation(generation)) _restoreClearFocus = true;
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RefreshCounts(int generation)
+    {
+        if (!IsCurrentOperation(generation) || !OnEntityChanged.HasDelegate) return;
+        await Task.Delay(500);
+        if (IsCurrentOperation(generation)) await OnEntityChanged.InvokeAsync();
+    }
+
+    private static string DescribePeek(PeekMessagesResult result, string? sessionId)
+    {
+        var scope = sessionId is null ? "all messages" : $"session '{sessionId}'";
+        return result.StopReason switch
+        {
+            PeekStopReason.Completed => $"Peeked {result.Messages.Count} message(s) from {scope}.",
+            PeekStopReason.MessageLimit => $"Peeked {result.Messages.Count} message(s) from {scope}; reached the scan limit. Results may be incomplete.",
+            PeekStopReason.TimeLimit => $"Peeked {result.Messages.Count} message(s) from {scope}; reached the time limit. Results may be incomplete.",
+            PeekStopReason.Cancelled => "Peek cancelled. Results may be incomplete.",
+            PeekStopReason.EntityNotFound => "Entity not found.",
+            PeekStopReason.InvalidSessionId => "Enter a session ID or select All for Peek.",
+            PeekStopReason.SessionUnavailable => "No unlocked active session was available within the wait.",
+            PeekStopReason.SessionLocked => "The session could not be locked. Try again later.",
+            _ => "Peek failed. Results may be incomplete; check the connection."
+        };
+    }
+
+    private static string DescribeReceive(LockedReceiveResult result)
+    {
+        var session = result.AcceptedSessionId is null ? string.Empty : $" from session '{result.AcceptedSessionId}'";
+        return result.Status switch
+        {
+            MessageOperationStatus.Completed => $"Received and locked {result.Batch?.Entries.Count ?? 0} message(s){session}. Choose Dead-Letter or Complete for each message.",
+            MessageOperationStatus.EntityNotFound => "Entity not found.",
+            MessageOperationStatus.InvalidSessionId => "Enter a session ID.",
+            MessageOperationStatus.SessionUnavailable => "No available session within the wait. Sessions may be empty or locked by another receiver.",
+            MessageOperationStatus.SessionLocked => "The selected session could not be locked. Try again when it is available.",
+            MessageOperationStatus.Cancelled => "Receive cancelled. Any acquired locks are being released.",
+            _ => "Receive failed. No deletion was requested; acquired locks are being released. Check the connection and receiver mode."
+        };
+    }
+
+    private static string DescribeDrain(DrainMessagesResult result, bool allSessions)
+    {
+        var session = allSessions ? $" across {result.SessionCount} session(s)"
+            : result.AcceptedSessionId is null ? string.Empty : $" from session '{result.AcceptedSessionId}'";
+        var reason = result.StopReason switch
+        {
+            DrainStopReason.Empty => "No more currently available messages. Locked, scheduled or deferred messages may remain.",
+            DrainStopReason.MessageLimit => "Reached the 10,000-message limit. More messages may remain.",
+            DrainStopReason.TimeLimit => "Reached the 30-second limit. More messages may remain.",
+            DrainStopReason.Cancelled => "Cancelled. Messages already removed cannot be restored.",
+            DrainStopReason.EntityNotFound => "Entity not found.",
+            DrainStopReason.InvalidSessionId => "Enter a session ID.",
+            DrainStopReason.SessionUnavailable => "No available session within the wait. Sessions may be empty or locked.",
+            DrainStopReason.SessionLocked => "The selected session could not be locked.",
+            DrainStopReason.NoProgress => "A session was selected again without progress. Clearing stopped; more messages may remain.",
+            _ => "Clear failed. The actual removed count may be higher; check the connection and receiver mode."
+        };
+        return $"Removed {result.DeletedCount} message(s){session}. {reason}";
+    }
+
+    private async Task ReplayMessage(LockedMessageBatch batch, LockedMessageEntry entry)
+    {
+        if (_disposed || ViewerBusy || _mode != ViewerMode.Receive || !_isDlqSelected ||
+            !ReferenceEquals(batch, _receivedBatch) || !batch.CanReplay(entry.Handle)) return;
+        var generation = _operationGeneration;
+        var handle = entry.Handle;
+        var freshId = Guid.NewGuid().ToString();
+        var cancellation = BeginOperation();
+        try
+        {
+            var result = await batch.ReplayAsync(handle, freshId, cancellation.Token);
+            if (!IsCurrentOperation(generation) || !ReferenceEquals(batch, _receivedBatch)) return;
+            if (result.IsCompleted) _replayedHandles.Add(handle);
+            _operationResult = DescribeReplay(result);
+            await InvokeAsync(StateHasChanged);
+            if (result.IsSendConfirmed || result.IsCompleted) await RefreshCounts(generation);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Replay could not be confirmed");
+            if (IsCurrentOperation(generation)) _operationResult = "Replay outcome could not be confirmed. Do not resend automatically; check Main and DLQ for duplicate copies.";
+        }
+        finally
+        {
+            EndOperation(cancellation);
+            if (!_disposed) await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string DescribeReplay(MessageReplayResult result)
+    {
+        if (result.IsCompleted) return $"Replayed to '{result.Destination}' with MessageId '{result.MessageId}' and completed the original DLQ message.";
+        if (result.IsSendConfirmed) return $"Copy sent to '{result.Destination}' with MessageId '{result.MessageId}', but original DLQ completion was not confirmed ({result.CompletionStatus}). Both copies may remain; do not Replay again blindly.";
+        return result.SendStatus switch
+        {
+            MessageReplaySendStatus.Cancelled => "Replay cancelled before sending. The DLQ message was not completed.",
+            MessageReplaySendStatus.Unsupported => "Replay is only available for received DLQ messages with a known destination.",
+            MessageReplaySendStatus.InvalidHandle or MessageReplaySendStatus.NotActionable => "The DLQ lock is no longer actionable. Reload messages.",
+            MessageReplaySendStatus.NotSent => "Replay did not send a copy. The original DLQ message was not completed.",
+            _ => $"Replay send was not confirmed for MessageId '{result.MessageId}'. The DLQ message was not completed. Check the destination before attempting another Replay: a copy may exist."
+        };
+    }
+
+    private async Task SettleMessage(LockedMessageBatch batch, LockedMessageEntry entry, bool deadLetter)
+    {
+        if (_disposed || ViewerBusy || _mode != ViewerMode.Receive || !ReferenceEquals(batch, _receivedBatch) || !batch.CanSettle(entry.Handle)) return;
+        if (deadLetter && _isDlqSelected) return;
+        var generation = _operationGeneration;
+        var cancellation = BeginOperation();
+        try
+        {
+            var result = deadLetter
+                ? await batch.DeadLetterAsync(entry.Handle, cancellationToken: cancellation.Token)
+                : await batch.CompleteAsync(entry.Handle, cancellation.Token);
+            if (!IsCurrentOperation(generation) || !ReferenceEquals(batch, _receivedBatch)) return;
+            _operationResult = result.Status switch
+            {
+                MessageSettlementStatus.Completed => "Message completed and deleted.",
+                MessageSettlementStatus.DeadLettered => "Message moved to the dead-letter queue.",
+                MessageSettlementStatus.LockLost => "The message lock was lost. Reload messages before trying again.",
+                MessageSettlementStatus.Cancelled => "Settlement cancelled. Reload to check the message's current state.",
+                MessageSettlementStatus.Unsupported => "This action is not supported for this message.",
+                MessageSettlementStatus.InvalidHandle or MessageSettlementStatus.NotActionable => "This message is no longer actionable. Reload messages.",
+                _ => "Settlement outcome could not be confirmed. Do not retry this lock; reload to check the message's current state."
+            };
+            await InvokeAsync(StateHasChanged);
+            if (result.IsSettled) await RefreshCounts(generation);
+            if (!batch.Entries.Any(item => batch.CanSettle(item.Handle)))
+            {
+                _lockTimer?.Dispose();
+                _lockTimer = null;
+                await batch.DisposeAsync();
             }
         }
         catch (Exception ex)
         {
-            _messages.Add(new DisplayedMessage { Body = $"Error: {ex.Message}" });
+            Logger.LogWarning(ex, "Could not settle a received message");
+            if (IsCurrentOperation(generation)) _operationResult = "Settlement could not be confirmed. Reload messages to check their current state.";
         }
         finally
         {
-            _lastMessagesRefreshed = DateTime.Now;
-            _loadingMessages = false;
-            await InvokeAsync(StateHasChanged);
+            EndOperation(cancellation);
+            if (!_disposed) await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -350,36 +924,6 @@
         sb.AppendLine(m.Body);
 
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
-    }
-
-    private async Task DeadLetterMessage(DisplayedMessage m)
-    {
-        if (string.IsNullOrWhiteSpace(SelectedEntity)) return;
-        
-        try
-        {
-            await Bus.DeadLetterMessageAsync(SelectedEntity, m.SequenceNumber);
-            
-            // Give the emulator a moment to update the database
-            await Task.Delay(500);
-            
-            // Reload messages to show the updated list
-            await LoadMessages();
-            
-            // Notify parent that entities may have changed (message counts)
-            if (OnEntityChanged.HasDelegate)
-            {
-                await OnEntityChanged.InvokeAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            // Add error message to the list
-            if (_messages != null)
-            {
-                _messages.Insert(0, new DisplayedMessage { Body = $"Error dead-lettering message: {ex.Message}" });
-            }
-        }
     }
 
     private void SaveMessageAsCanned(DisplayedMessage m)

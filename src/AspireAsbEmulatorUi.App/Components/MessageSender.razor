@@ -62,7 +62,23 @@
     </div>
 
     <div class="mt-4 space-y-4">
-        <BrokerPropertiesEditor 
+        @if (RequiresSession == true || HasSessionSubscriptions)
+        {
+            <div class="rounded p-3 bg-yellow-800 text-yellow-100 text-sm">
+                @if (RequiresSession == true)
+                {
+                    <p>This queue requires a SessionId broker property before sending.</p>
+                }
+                else
+                {
+                    <p>This topic has session-enabled subscriptions. Set a SessionId for messages intended for those subscriptions.</p>
+                }
+                <p class="mt-1">Use the broker-property editor below. Reuse an ID to group messages, or use + to generate one.</p>
+                <button type="button" class="mt-2 px-3 py-1 rounded bg-slate-600 text-white hover:bg-slate-700" @onclick="OpenSessionId">Set Session ID</button>
+            </div>
+        }
+        <BrokerPropertiesEditor
+            @ref="_brokerEditor"
             Title="Broker properties"
             Properties="_brokerProperties"
             OnPropertiesChanged="StateHasChanged"
@@ -107,7 +123,7 @@
         <div class="mt-3 rounded p-3 bg-yellow-800 text-yellow-100">
             Warning: you are sending an empty message body. This action may be intentional.
             <div class="mt-2 flex gap-2">
-                <button class="px-3 py-1 rounded bg-red-600 text-white" @onclick="Send">Proceed</button>
+                <button class="px-3 py-1 rounded bg-red-600 text-white" @onclick="() => SendValidated(true)">Proceed</button>
                 <button class="px-3 py-1 rounded bg-slate-700 text-white" @onclick="() => _confirmEmpty = false">Cancel</button>
             </div>
         </div>
@@ -143,6 +159,8 @@
     [Parameter] public string SelectedEntity { get; set; } = string.Empty;
     [Parameter] public string DisplayName { get; set; } = string.Empty;
     [Parameter] public EventCallback OnEntityChanged { get; set; }
+    [Parameter] public bool? RequiresSession { get; set; }
+    [Parameter] public bool HasSessionSubscriptions { get; set; }
 
     private StandaloneCodeEditor? _editor;
     private string _body = string.Empty;
@@ -156,6 +174,10 @@
     private List<BrokerPropertiesEditor.PropertyItem> _brokerProperties = new();
     private List<ApplicationPropertiesEditor.PropertyItem> _appProperties = new();
     
+
+    private BrokerPropertiesEditor? _brokerEditor;
+
+    private Task OpenSessionId() => _brokerEditor?.OpenSessionIdAsync() ?? Task.CompletedTask;
 
     private bool _confirmEmpty = false;
     private bool _showSaveDialog = false;
@@ -441,7 +463,9 @@
         };
     }
 
-    private async Task ConfirmAndSend()
+    private Task ConfirmAndSend() => SendValidated(false);
+
+    private async Task SendValidated(bool allowEmpty)
     {
         // Get the current value from the editor first
         if (_editor != null)
@@ -449,12 +473,6 @@
             _body = await _editor.GetValue();
         }
 
-        if (string.IsNullOrWhiteSpace(_body))
-        {
-            _confirmEmpty = true;
-            return;
-        }
-        
         if (_appProperties.Any(p => p.IsEditing) || _brokerProperties.Any(p => p.IsEditing))
         {
             _result = "Cannot send: there are unsaved property edits. Save or cancel them before sending.";
@@ -468,7 +486,20 @@
             return;
         }
 
-        if (_sendMultiple)        
+        var sessionError = SessionBrokerProperty.GetValidationError(_brokerProperties, RequiresSession);
+        if (sessionError is not null)
+        {
+            _result = $"Cannot send: {sessionError}";
+            return;
+        }
+
+        if (!allowEmpty && string.IsNullOrWhiteSpace(_body))
+        {
+            _confirmEmpty = true;
+            return;
+        }
+
+        if (_sendMultiple)
             await SendMultiple();        
         else        
             await Send();        
@@ -482,6 +513,13 @@
     private async Task Send(bool isBatch)
     {
         _confirmEmpty = false;
+        var sessionError = SessionBrokerProperty.GetValidationError(_brokerProperties, RequiresSession);
+        if (sessionError is not null)
+        {
+            if (isBatch) throw new InvalidOperationException(sessionError);
+            _result = $"Cannot send: {sessionError}";
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(SelectedEntity))
         {
@@ -506,7 +544,11 @@
             
             var brokerProps = _brokerProperties
                 .Where(kv => !string.IsNullOrWhiteSpace(kv.Key))
-                .ToDictionary(k => k.Key, v => (object)PlaceholderService.ProcessPlaceholders(v.Value));
+                .ToDictionary(k => SessionBrokerProperty.IsSessionKey(k.Key) ? "SessionId" : k.Key,
+                    v => (object)PlaceholderService.ProcessPlaceholders(v.Value));
+
+            if (RequiresSession == true && (!brokerProps.TryGetValue("SessionId", out var sessionValue) || string.IsNullOrWhiteSpace(sessionValue?.ToString())))
+                throw new InvalidOperationException("This queue requires a nonempty Session ID. Set SessionId in Broker properties.");
 
             if (!string.IsNullOrWhiteSpace(_contentType)) brokerProps["ContentType"] = _contentType;
 
@@ -537,7 +579,9 @@
         catch (Exception ex)
         {
             if (isBatch) throw;
-            _result = $"Error: {ex.Message}";
+            _result = ex.Message.Contains("SessionId was not set", StringComparison.OrdinalIgnoreCase)
+                ? "Cannot send: this entity requires a Session ID. Set SessionId in Broker properties."
+                : $"Error: {ex.Message}";
         }
     }
 
@@ -575,7 +619,9 @@
         }
         catch (Exception ex)
         {
-            _result = $"Error: {ex.Message}";
+            _result = ex.Message.Contains("SessionId was not set", StringComparison.OrdinalIgnoreCase)
+                ? "Cannot send: this entity requires a Session ID. Set SessionId in Broker properties."
+                : $"Error: {ex.Message}";
         }
     }
 

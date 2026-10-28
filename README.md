@@ -20,6 +20,8 @@ Basically postman for the ASB emulator!
 - Send messages to queues or topics
 - **Monaco Editor** with syntax highlighting for JSON, XML, plain text
 - Configure broker properties (MessageId, CorrelationId, SessionId, TTL, ScheduledEnqueueTime, etc.)
+- **Session ID**: set `SessionId` in **Broker properties**. For known session-enabled targets, **Set Session ID** opens the existing property editor with SessionId selected. Enter an ID or use **+** to generate a GUID, then **Save**. Reuse an ID to group messages; literal IDs are shared by a batch, while explicit placeholders keep their per-message behavior.
+- Session-enabled queues show requirement guidance when management metadata is available; topics warn about known session-enabled subscriptions. Aspire supplies the emulator management endpoint when available. For standalone use, set `ASB_MANAGEMENT_ENDPOINT` to its HTTP management URL (port 5300 inside the emulator, not its AMQP port), or provide `ASB_MANAGEMENT_CONNECTIONSTRING`. Detection is best-effort: unavailable metadata leaves the requirement unknown, but the broker still enforces it.
 - Configure application properties
 - **Placeholder syntax** for dynamic test data
 - **Canned Messages** library:
@@ -29,9 +31,17 @@ Basically postman for the ASB emulator!
 - **Quick Values** clipboard helper (new GUIDs, timestamps)
 
 ### 👀 Message Viewer
-- Peek or Receive messages from queues
+- Select **Peek | Receive | Clear**, then use the single **Go** action. Switching mode does not start an operation.
 - Monaco Editor for message body viewing
 - Display broker and application properties
+- **Clear**: the tooltip identifies Main, DLQ or session scope, and an in-app confirmation names the target before draining currently available messages from the selected queue or subscription. For DLQ messages already received by this viewer, Clear completes those retained locks first, then drains currently available messages. Switching between Receive and Clear on the same DLQ preserves those locks until confirmation; cancelling does not settle them. Clearing stops after 10,000 messages, 30 seconds, or an empty receive; messages locked elsewhere, scheduled and deferred may remain. Cancellation cannot restore messages already deleted.
+- **Session scope**: one dropdown offers **AllSessions | NextAvailableSession | SpecificSession** for session-enabled Main entities. AllSessions is hidden in Receive mode. SpecificSession shows one input; IDs are case-sensitive. NextAvailableSession displays the actual selected ID after Peek or Receive. Ordinary entities and DLQs use ordinary receivers; when metadata is unknown, explicitly enable session handling if appropriate.
+- **Session Clear**: AllSessions drains available sessions under one global 10,000-message/30-second limit; NextAvailableSession or SpecificSession drains one session. The confirmation states the scope. Locked, scheduled or deferred messages can remain, and repeated session selection stops clearing rather than looping indefinitely.
+- **Session Peek**: AllSessions and SpecificSession use non-locking paginated inspection. NextAvailableSession briefly accepts a PeekLock session while inspecting its messages, then releases it without receiving/deleting messages. All peeks scan at most 10,000 messages or 30 seconds; limited/cancelled/error results are marked potentially incomplete.
+- **Receive locks messages**: Load opens the same in-app confirmation pattern as Clear, explaining the selected target/count and lock/redelivery consequences. Cancel does not receive messages or release the current batch. Received Main rows offer **Dead-Letter** and **Complete** against their original lock/receiver; DLQ rows offer **Replay** and **Complete**. Per-message actions run without repeated modal confirmations; successfully replayed rows show **Replayed**, while settled Main rows show **Completed** or **DeadLettered** with actions disabled. No other messages are received or abandoned when clicking settlement actions.
+- **DLQ Replay**: clicking Replay directly sends a new copy to the main queue—or the parent topic for a subscription DLQ—then completes the original only after confirmed send. Replay preserves raw body, typed application properties, SessionId and writable message properties, uses a fresh MessageId and removes old scheduling/dead-letter diagnostics. Topic replay can reach every matching subscription. Send and completion are not atomic: uncertain sends or failed completion may leave duplicates, are reported separately and are never automatically retried.
+- Received rows show settlement state, delivery count and lock expiry. Locks are not renewed; expired or uncertain handles cannot be retried. Reloading, switching context, disconnecting or leaving the page closes the receiver; unsettled locks may remain until broker expiry. Expiry/redelivery can increase delivery counts and eventually cause automatic dead-lettering.
+- **Peek is inspection-only**: peeked messages have no settlement lock. Sequence-based settlement APIs reject requests without contacting the broker, avoiding unsafe receive/abandon scans. The existing programmatic `ReceiveMessagesAsync` / `ReceiveMessagesWithSessionAsync` APIs remain ReceiveAndDelete for compatibility; only the UI Receive workflow uses retained PeekLock batches. Clear remains bulk deletion.
 
 ### ⚙️ Settings Management
 - **Persistence**: Settings are saved to `localStorage` and automatically loaded.

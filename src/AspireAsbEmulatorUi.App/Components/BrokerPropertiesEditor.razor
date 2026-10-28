@@ -12,7 +12,7 @@
                 @if (Properties[idx].IsEditing)
                 {
                     <select class="bg-slate-900 border border-slate-700 text-slate-100 px-2 py-1 rounded w-48" 
-                            @bind="Properties[idx].Key">
+                            @bind="Properties[idx].Key" @bind:after="() => OnPropertiesChanged.InvokeAsync()">
                         @foreach (var opt in BrokerKeyKinds.Keys)
                         {
                             <option value="@opt">@opt</option>
@@ -273,13 +273,23 @@
         _newBrokerValue = Guid.NewGuid().ToString();
     }
 
-    private void AddRowBroker()
+    /// <summary>Opens the existing SessionId editor, or adds one draft without replacing unsaved edits.</summary>
+    public async Task OpenSessionIdAsync()
+    {
+        var index = SessionBrokerProperty.FindOrAddRow(Properties);
+        if (!Properties[index].IsEditing) await EditBrokerRow(index);
+        else await OnPropertiesChanged.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private async Task AddRowBroker()
     {
         var item = new PropertyItem { IsEditing = true }; 
         Properties.Add(item);
+        await OnPropertiesChanged.InvokeAsync();
     }
 
-    private void EditBrokerRow(int idx)
+    private async Task EditBrokerRow(int idx)
     {
         if (idx < 0 || idx >= Properties.Count) return;
         var p = Properties[idx];
@@ -295,9 +305,10 @@
         {
             if (DateTimeOffset.TryParse(p.Value, out var dto)) _editDateTimeValue = dto.DateTime;
         }
+        await OnPropertiesChanged.InvokeAsync();
     }
 
-    private void CancelBrokerEdit(int idx)
+    private async Task CancelBrokerEdit(int idx)
     {
         if (idx < 0 || idx >= Properties.Count) return;
         var p = Properties[idx];
@@ -311,12 +322,18 @@
             p.Value = p.OriginalValue ?? string.Empty;
             p.IsEditing = false;
         }
+        await OnPropertiesChanged.InvokeAsync();
     }
 
     private async Task SaveBrokerRow(int idx)
     {
         if (idx < 0 || idx >= Properties.Count) return;
         var p = Properties[idx];
+        if (SessionBrokerProperty.IsSessionKey(p.Key) && Properties.Where((_, i) => i != idx).Any(other => SessionBrokerProperty.IsSessionKey(other.Key)))
+        {
+            await OnMessage.InvokeAsync("Broker property 'SessionId' already added. Edit the existing value instead.");
+            return;
+        }
         if (BrokerKeyKinds.TryGetValue(p.Key, out var k) && k == BrokerValueKind.TimeSpan)
         {
             p.Value = _editTtlNumber.ToString();

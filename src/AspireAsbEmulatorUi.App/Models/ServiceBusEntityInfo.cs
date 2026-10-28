@@ -6,6 +6,8 @@ public class ServiceBusEntityInfo
     public string Name { get; set; } = string.Empty;
     public string EntityType { get; set; } = string.Empty;
     public string? ParentTopic { get; set; }
+    /// <summary>Whether sessions are required; null means metadata is unavailable or not applicable.</summary>
+    public bool? RequiresSession { get; set; }
     public long ActiveMessageCount { get; set; }
     public long DeadletterMessageCount { get; set; }
 

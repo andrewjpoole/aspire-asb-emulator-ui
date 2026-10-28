@@ -1,5 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using System.Text;
+using AspireAsbEmulatorUi.App.Models;
 
 namespace AspireAsbEmulatorUi.App.Services;
 
@@ -9,6 +10,20 @@ public class ServiceBusService : IAsyncDisposable
     private readonly ILogger<ServiceBusService> _logger;
     private readonly AsbEmulatorSqlEntityRepository _repo;
     private ServiceBusClient? _client;
+    private readonly object _lockedClientSync = new();
+    private ServiceBusClient? _lockedClient;
+    private readonly Func<string, ServiceBusClient> _lockedClientFactory = cs => new ServiceBusClient(cs,
+        new ServiceBusClientOptions { RetryOptions = new ServiceBusRetryOptions { MaxRetries = 0 } });
+    private readonly Func<string, ServiceBusClient> _clientFactory = cs => new ServiceBusClient(cs);
+    private readonly TimeProvider _timeProvider = TimeProvider.System;
+    internal const int DrainBatchSize = 100;
+    internal const int DrainMessageLimit = 10_000;
+    internal static readonly TimeSpan DrainTimeLimit = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan ReceiveIdleWait = TimeSpan.FromSeconds(1);
+    internal static readonly TimeSpan SessionAcceptTimeout = TimeSpan.FromSeconds(5);
+    internal const int PeekScanLimit = 10_000;
+    internal static readonly TimeSpan ScanTimeLimit = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(2);
 
     public ServiceBusService(string connectionString, ILogger<ServiceBusService> logger, AsbEmulatorSqlEntityRepository repo)
     {
@@ -23,6 +38,370 @@ public class ServiceBusService : IAsyncDisposable
         else
         {
             _logger.LogWarning("ServiceBusService created with empty connection string.");
+        }
+    }
+
+    // Allows tests to supply SDK fakes and a controllable clock without a live broker,
+    // while preserving the public constructor and lazy client ownership in production.
+    internal ServiceBusService(string connectionString, ILogger<ServiceBusService> logger,
+        AsbEmulatorSqlEntityRepository repo, Func<string, ServiceBusClient> clientFactory, TimeProvider? timeProvider = null,
+        Func<string, ServiceBusClient>? lockedClientFactory = null)
+        : this(connectionString, logger, repo)
+    {
+        _clientFactory = clientFactory;
+        _lockedClientFactory = lockedClientFactory ?? clientFactory;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    private ServiceBusClient LockedClient
+    {
+        get
+        {
+            lock (_lockedClientSync)
+                return _lockedClient ??= _lockedClientFactory(NormalizeConnectionString(_connectionString));
+        }
+    }
+
+    /// <summary>
+    /// Receives a bounded PeekLock batch owned by the caller, retaining original SDK identities for settlement.
+    /// No renewal or automatic settlement retries. Empty/failure/cancelled acquisitions close their receiver.
+    /// </summary>
+    public async Task<LockedReceiveResult> ReceiveLockedMessagesAsync(string entity, int maxMessages = 20,
+        SessionReceiveOptions? sessionOptions = null, CancellationToken cancellationToken = default)
+    {
+        var clean = CleanEntityName(entity);
+        var selection = EffectiveSelection(clean, sessionOptions);
+        ServiceBusReceiver? receiver = null;
+        string? acceptedId = null;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(DrainTimeLimit);
+        try
+        {
+            deadline.Token.ThrowIfCancellationRequested();
+            if (!IsValidSelection(selection)) return new(null, MessageOperationStatus.InvalidSessionId);
+            if (maxMessages <= 0 || maxMessages > DrainBatchSize) return new(null, MessageOperationStatus.Failed);
+            if (!await EntityExistsViaRepoAsync(clean, deadline.Token, throwOnFailure: true))
+                return new(null, MessageOperationStatus.EntityNotFound);
+            var acquisition = CreateReceiveReceiverAsync(clean, selection, deadline.Token, ServiceBusReceiveMode.PeekLock, LockedClient);
+            try { receiver = await acquisition.WaitAsync(deadline.Token); }
+            catch
+            {
+                _ = CloseLateAcquisitionAsync(acquisition, clean);
+                throw;
+            }
+            acceptedId = (receiver as ServiceBusSessionReceiver)?.SessionId;
+            var receive = receiver.ReceiveMessagesAsync(maxMessages, ReceiveIdleWait, deadline.Token);
+            IReadOnlyList<ServiceBusReceivedMessage> messages;
+            try { messages = await receive.WaitAsync(deadline.Token); }
+            catch
+            {
+                // Transfer cleanup to an observer; do not close against an unfinished SDK receive.
+                _ = CloseAfterReceiveAsync(receive, receiver, clean);
+                receiver = null;
+                throw;
+            }
+            deadline.Token.ThrowIfCancellationRequested();
+            if (messages.Count == 0) return new(null, MessageOperationStatus.Completed, acceptedId);
+            var isDlq = clean.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase);
+            var (destination, replayToTopic) = GetReplayDestination(clean);
+            var batch = new LockedMessageBatch(receiver, messages, ConvertToDisplayedMessage,
+                isDlq, _timeProvider, _logger, replayDestination: destination, replayToTopic: replayToTopic,
+                senderFactory: destination is null ? null : () => LockedClient.CreateSender(destination));
+            receiver = null; // Exactly one transfer; viewer must dispose even if its result is stale.
+            if (deadline.IsCancellationRequested)
+            {
+                await batch.DisposeAsync();
+                return new(null, cancellationToken.IsCancellationRequested ? MessageOperationStatus.Cancelled : MessageOperationStatus.Failed, acceptedId);
+            }
+            return new(batch, MessageOperationStatus.Completed, acceptedId);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            return new(null, cancellationToken.IsCancellationRequested ? MessageOperationStatus.Cancelled : MessageOperationStatus.Failed, acceptedId);
+        }
+        catch (ServiceBusException ex) when (acceptedId is null && selection.Mode != SessionReceiveMode.Standard && ex.Reason == ServiceBusFailureReason.ServiceTimeout)
+        { return new(null, MessageOperationStatus.SessionUnavailable); }
+        catch (ServiceBusException ex) when (selection.Mode != SessionReceiveMode.Standard && ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        { return new(null, MessageOperationStatus.SessionLocked, acceptedId); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Locked batch acquisition failed");
+            return new(null, MessageOperationStatus.Failed, acceptedId);
+        }
+        finally
+        {
+            if (receiver is not null) await DisposeReceiverBoundedAsync(receiver, clean);
+        }
+    }
+
+    internal static (string? Destination, bool ToTopic) GetReplayDestination(string entity)
+    {
+        var clean = CleanEntityName(entity);
+        const string suffix = "/$deadletterqueue";
+        if (!clean.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return (null, false);
+        var source = clean[..^suffix.Length];
+        var parts = source.Split("/subscriptions/", StringSplitOptions.None);
+        if (parts.Length > 2 || parts.Any(string.IsNullOrWhiteSpace) || source.Split('/').Any(string.IsNullOrWhiteSpace) ||
+            (parts.Length == 2 && parts[1].Contains('/')) || source.Contains('$') || source.Contains('|'))
+            return (null, false);
+        return (parts[0], parts.Length == 2);
+    }
+
+    internal static ServiceBusMessage CreateReplayMessage(ServiceBusReceivedMessage original, string freshMessageId)
+    {
+        // Explicit allow-list: raw body and sendable properties only, never received lock/delivery metadata.
+        var copy = new ServiceBusMessage(original.Body)
+        {
+            MessageId = freshMessageId,
+            // PartitionKey is assigned before SessionId: explicitly assigning null after a session ID
+            // triggers the SDK's equal-partition/session guard even for a valid unpartitioned message.
+            PartitionKey = original.PartitionKey,
+            SessionId = original.SessionId,
+            ReplyToSessionId = original.ReplyToSessionId,
+            CorrelationId = original.CorrelationId,
+            ContentType = original.ContentType,
+            Subject = original.Subject,
+            To = original.To,
+            ReplyTo = original.ReplyTo,
+            TransactionPartitionKey = original.TransactionPartitionKey,
+            TimeToLive = original.TimeToLive,
+            ScheduledEnqueueTime = default
+        };
+        foreach (var property in original.ApplicationProperties)
+            if (!property.Key.Equals("DeadLetterReason", StringComparison.OrdinalIgnoreCase) &&
+                !property.Key.Equals("DeadLetterErrorDescription", StringComparison.OrdinalIgnoreCase))
+                copy.ApplicationProperties.Add(property.Key, property.Value);
+        return copy;
+    }
+
+    private async Task CloseLateAcquisitionAsync(Task<ServiceBusReceiver> acquisition, string clean)
+    {
+        try { await DisposeReceiverBoundedAsync(await acquisition, clean); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Late receiver acquisition failed"); }
+    }
+
+    private async Task CloseAfterReceiveAsync(Task<IReadOnlyList<ServiceBusReceivedMessage>> receive, ServiceBusReceiver receiver, string clean)
+    {
+        try { await receive; }
+        catch (Exception ex) { _logger.LogWarning(ex, "Late locked receive failed"); }
+        finally { await DisposeReceiverBoundedAsync(receiver, clean); }
+    }
+
+    /// <summary>Destructively receives and deletes one batch from an ordinary receiver or one explicitly accepted session.</summary>
+    public async Task<ReceiveMessagesResult> ReceiveMessagesWithSessionAsync(string queueName, int maxMessages = 20,
+        SessionReceiveOptions? sessionOptions = null, CancellationToken cancellationToken = default)
+    {
+        var clean = CleanEntityName(queueName);
+        var selection = EffectiveSelection(clean, sessionOptions);
+        string? acceptedId = null;
+        IReadOnlyList<DisplayedMessage> messages = [];
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(DrainTimeLimit);
+        try
+        {
+            deadline.Token.ThrowIfCancellationRequested();
+            if (!IsValidSelection(selection)) return new(messages, MessageOperationStatus.InvalidSessionId);
+            if (!await EntityExistsViaRepoAsync(clean, deadline.Token, throwOnFailure: true)) return new(messages, MessageOperationStatus.EntityNotFound);
+            await using var receiver = await CreateReceiveReceiverAsync(clean, selection, deadline.Token);
+            acceptedId = (receiver as ServiceBusSessionReceiver)?.SessionId;
+            var batch = await receiver.ReceiveMessagesAsync(maxMessages, ReceiveIdleWait, deadline.Token);
+            messages = batch.Select(ConvertToDisplayedMessage).ToList();
+            return new(messages, MessageOperationStatus.Completed, acceptedId);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            return new(messages, cancellationToken.IsCancellationRequested ? MessageOperationStatus.Cancelled : MessageOperationStatus.Failed, acceptedId);
+        }
+        catch (ServiceBusException ex) when (acceptedId is null && selection.Mode != SessionReceiveMode.Standard && ex.Reason == ServiceBusFailureReason.ServiceTimeout)
+        {
+            return new(messages, MessageOperationStatus.SessionUnavailable);
+        }
+        catch (ServiceBusException ex) when (selection.Mode != SessionReceiveMode.Standard && ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        {
+            return new(messages, MessageOperationStatus.SessionLocked, acceptedId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Receive failed for '{Entity}'", clean);
+            return new(messages, MessageOperationStatus.Failed, acceptedId);
+        }
+    }
+
+    private static SessionReceiveOptions EffectiveSelection(string clean, SessionReceiveOptions? selection)
+        => clean.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase) ? new() : selection ?? new();
+
+    private static bool IsValidSelection(SessionReceiveOptions selection)
+        => selection.Mode == SessionReceiveMode.Standard || selection.Mode == SessionReceiveMode.NextAvailable ||
+           (selection.Mode == SessionReceiveMode.Specified && !string.IsNullOrWhiteSpace(selection.SessionId));
+
+    private async Task<ServiceBusReceiver> CreateReceiveReceiverAsync(string clean, SessionReceiveOptions selection, CancellationToken cancellationToken,
+        ServiceBusReceiveMode receiveMode = ServiceBusReceiveMode.ReceiveAndDelete, ServiceBusClient? client = null)
+    {
+        client ??= Client;
+        if (selection.Mode == SessionReceiveMode.Standard)
+            return client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = receiveMode, PrefetchCount = 0 });
+
+        using var acceptDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        acceptDeadline.CancelAfter(SessionAcceptTimeout);
+        var options = new ServiceBusSessionReceiverOptions { ReceiveMode = receiveMode, PrefetchCount = 0 };
+        var parts = clean.Split("/subscriptions/", 2, StringSplitOptions.None);
+        try
+        {
+            if (parts.Length == 2)
+                return selection.Mode == SessionReceiveMode.NextAvailable
+                    ? await client.AcceptNextSessionAsync(parts[0], parts[1], options, acceptDeadline.Token)
+                    : await client.AcceptSessionAsync(parts[0], parts[1], selection.SessionId!, options, acceptDeadline.Token);
+            return selection.Mode == SessionReceiveMode.NextAvailable
+                ? await client.AcceptNextSessionAsync(clean, options, acceptDeadline.Token)
+                : await client.AcceptSessionAsync(clean, selection.SessionId!, options, acceptDeadline.Token);
+        }
+        catch (OperationCanceledException) when (acceptDeadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new ServiceBusException("Session acceptance timed out.", ServiceBusFailureReason.ServiceTimeout);
+        }
+    }
+
+    /// <summary>Drains only the selected target within bounded message, duration and idle limits.</summary>
+    public Task<DrainMessagesResult> DrainMessagesAsync(string queueName, SessionReceiveOptions? sessionOptions = null,
+        CancellationToken cancellationToken = default)
+        => DrainMessagesCoreAsync(queueName, sessionOptions, DrainMessageLimit, cancellationToken);
+
+    /// <summary>
+    /// Drains currently available messages through an ordinary ReceiveAndDelete receiver within the supplied
+    /// remaining budget (capped at 10,000). DLQ draining does not depend on Main session configuration.
+    /// Supply an overall cancellation deadline when combining this with retained-message completion.
+    /// </summary>
+    public Task<DrainMessagesResult> DrainAvailableMessagesAsync(string queueName, int maxMessages,
+        CancellationToken cancellationToken = default)
+        => DrainMessagesCoreAsync(queueName, null, Math.Clamp(maxMessages, 0, DrainMessageLimit), cancellationToken);
+
+    private async Task<DrainMessagesResult> DrainMessagesCoreAsync(string queueName, SessionReceiveOptions? sessionOptions,
+        int maxMessages, CancellationToken cancellationToken)
+    {
+        var progress = new DrainProgress();
+        var clean = CleanEntityName(queueName);
+        var selection = EffectiveSelection(clean, sessionOptions);
+        string? acceptedId = null;
+        var started = _timeProvider.GetUtcNow();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(DrainTimeLimit);
+        try
+        {
+            deadline.Token.ThrowIfCancellationRequested();
+            if (maxMessages == 0) return new(0, DrainStopReason.MessageLimit);
+            if (!IsValidSelection(selection)) return new(progress.Count, DrainStopReason.InvalidSessionId);
+            if (!await EntityExistsViaRepoAsync(clean, deadline.Token, throwOnFailure: true))
+                return new(progress.Count, DrainStopReason.EntityNotFound);
+            await using var receiver = await CreateReceiveReceiverAsync(clean, selection, deadline.Token);
+            acceptedId = (receiver as ServiceBusSessionReceiver)?.SessionId;
+            var stop = await DrainReceiverCoreAsync(receiver, progress, started, deadline.Token, maxMessages);
+            return new(progress.Count, stop, acceptedId);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            return new(progress.Count, cancellationToken.IsCancellationRequested ? DrainStopReason.Cancelled : DrainStopReason.TimeLimit, acceptedId);
+        }
+        catch (ServiceBusException ex) when (acceptedId is null && selection.Mode != SessionReceiveMode.Standard && ex.Reason == ServiceBusFailureReason.ServiceTimeout)
+        {
+            return new(progress.Count, DrainStopReason.SessionUnavailable);
+        }
+        catch (ServiceBusException ex) when (selection.Mode != SessionReceiveMode.Standard && ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        {
+            return new(progress.Count, DrainStopReason.SessionLocked, acceptedId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bounded drain failed for '{Entity}' after {Count} returned messages", clean, progress.Count);
+            return new(progress.Count, DrainStopReason.Failed, acceptedId);
+        }
+    }
+
+    /// <summary>
+    /// Best-effort ReceiveAndDelete drain of all currently available unlocked active sessions, bounded globally
+    /// to 10,000 returned messages and 30 seconds. Locked, scheduled and deferred messages may remain.
+    /// SessionCount counts accepted receivers, including a repeated ID stopped without receiving.
+    /// Dead-letter subqueues use the ordinary drain. No destructive operation is retried or falls back.
+    /// </summary>
+    public async Task<DrainMessagesResult> DrainAllAvailableSessionsAsync(string queueName, CancellationToken cancellationToken = default)
+    {
+        var clean = CleanEntityName(queueName);
+        if (clean.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase))
+            return await DrainMessagesAsync(queueName, cancellationToken: cancellationToken);
+        var progress = new DrainProgress();
+        var sessionCount = 0;
+        var stop = DrainStopReason.Failed;
+        ServiceBusReceiver? receiver = null;
+        var lastProgressById = new Dictionary<string, int>(StringComparer.Ordinal);
+        var started = _timeProvider.GetUtcNow();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(DrainTimeLimit);
+        try
+        {
+            deadline.Token.ThrowIfCancellationRequested();
+            if (!await EntityExistsViaRepoAsync(clean, deadline.Token, throwOnFailure: true))
+                return new(0, DrainStopReason.EntityNotFound);
+            while (true)
+            {
+                deadline.Token.ThrowIfCancellationRequested();
+                if (progress.Count >= DrainMessageLimit) { stop = DrainStopReason.MessageLimit; break; }
+                if (_timeProvider.GetUtcNow() - started >= DrainTimeLimit) { stop = DrainStopReason.TimeLimit; break; }
+                receiver = await CreateReceiveReceiverAsync(clean, new(SessionReceiveMode.NextAvailable), deadline.Token);
+                sessionCount++;
+                var id = ((ServiceBusSessionReceiver)receiver).SessionId;
+                // A repeated ID without any intervening deletion cannot make progress; release without receiving again.
+                if (lastProgressById.TryGetValue(id, out var previousCount) && previousCount == progress.Count)
+                    stop = DrainStopReason.NoProgress;
+                else
+                {
+                    lastProgressById[id] = progress.Count;
+                    stop = await DrainReceiverCoreAsync(receiver, progress, started, deadline.Token);
+                }
+                var disposed = await DisposeReceiverBoundedAsync(receiver, clean);
+                receiver = null;
+                if (!disposed) { stop = DrainStopReason.Failed; break; }
+                if (stop != DrainStopReason.Empty) break;
+            }
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            stop = cancellationToken.IsCancellationRequested ? DrainStopReason.Cancelled : DrainStopReason.TimeLimit;
+        }
+        catch (ServiceBusException ex) when (receiver is null && ex.Reason == ServiceBusFailureReason.ServiceTimeout)
+        {
+            stop = _timeProvider.GetUtcNow() - started >= DrainTimeLimit ? DrainStopReason.TimeLimit : DrainStopReason.SessionUnavailable;
+        }
+        catch (ServiceBusException ex) when (receiver is null && ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        {
+            stop = DrainStopReason.SessionLocked;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "All-session drain failed for '{Entity}' after {Count} returned messages", clean, progress.Count);
+            stop = DrainStopReason.Failed;
+        }
+        finally
+        {
+            if (receiver is not null && !await DisposeReceiverBoundedAsync(receiver, clean)) stop = DrainStopReason.Failed;
+        }
+        return new(progress.Count, stop, SessionCount: sessionCount);
+    }
+
+    private sealed class DrainProgress
+    {
+        public int Count { get; set; }
+    }
+
+    private async Task<DrainStopReason> DrainReceiverCoreAsync(ServiceBusReceiver receiver, DrainProgress progress,
+        DateTimeOffset started, CancellationToken cancellationToken, int maxMessages = DrainMessageLimit)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (progress.Count >= maxMessages) return DrainStopReason.MessageLimit;
+            if (_timeProvider.GetUtcNow() - started >= DrainTimeLimit) return DrainStopReason.TimeLimit;
+            var batch = await receiver.ReceiveMessagesAsync(Math.Min(DrainBatchSize, maxMessages - progress.Count), ReceiveIdleWait, cancellationToken);
+            progress.Count += batch.Count;
+            if (batch.Count == 0) return DrainStopReason.Empty;
         }
     }
 
@@ -41,7 +420,7 @@ public class ServiceBusService : IAsyncDisposable
                     throw new InvalidOperationException(msg);
                 }
 
-                _client = new ServiceBusClient(cs);
+                _client = _clientFactory(cs);
             }
             return _client;
         }
@@ -115,21 +494,148 @@ public class ServiceBusService : IAsyncDisposable
         return clean.ToLowerInvariant();
     }
 
-    public async Task<List<Models.DisplayedMessage>> PeekMessagesAsync(string queueName, int maxMessages = 20)
+    /// <summary>
+    /// Peeks through an ordinary non-locking receiver, optionally filtering an exact-case session ID.
+    /// Bounds scanning to 10,000 messages or 30 seconds; limits and failures indicate incomplete results.
+    /// Dead-letter subqueues remain entity-wide. No session is accepted and no message is received.
+    /// </summary>
+    public Task<PeekMessagesResult> PeekMessagesWithSessionAsync(string queueName, int maxMessages = 20,
+        string? sessionId = null, CancellationToken cancellationToken = default)
+        => PeekBoundedAsync(queueName, maxMessages, sessionId, false, cancellationToken);
+
+    /// <summary>
+    /// Briefly locks the next available active session in PeekLock while ordinary paginated peek filters its exact ID.
+    /// Acceptance and inspection share a 30-second deadline and 10,000-message scan cap. Never receives or settles.
+    /// Dead-letter subqueues use ordinary entity-wide peek without accepting a session.
+    /// </summary>
+    public Task<PeekMessagesResult> PeekNextAvailableSessionAsync(string queueName, int maxMessages = 20,
+        CancellationToken cancellationToken = default)
+        => PeekBoundedAsync(queueName, maxMessages, null, true, cancellationToken);
+
+    private async Task<PeekMessagesResult> PeekBoundedAsync(string queueName, int maxMessages, string? sessionId,
+        bool nextSession, CancellationToken cancellationToken)
+    {
+        var clean = CleanEntityName(queueName);
+        if (clean.EndsWith("/$deadletterqueue", StringComparison.OrdinalIgnoreCase)) { sessionId = null; nextSession = false; }
+        ServiceBusReceiver? sessionReceiver = null;
+        string? acceptedId = null;
+        var progress = new PeekProgress();
+        var messages = progress.Messages;
+        var stop = PeekStopReason.Failed;
+        ServiceBusReceiver? receiver = null;
+        var started = _timeProvider.GetUtcNow();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(ScanTimeLimit);
+        try
+        {
+            deadline.Token.ThrowIfCancellationRequested();
+            if (sessionId is not null && string.IsNullOrWhiteSpace(sessionId)) return new(messages, PeekStopReason.InvalidSessionId);
+            if (maxMessages <= 0 || maxMessages > PeekScanLimit) throw new ArgumentOutOfRangeException(nameof(maxMessages));
+            if (!await EntityExistsViaRepoAsync(clean, deadline.Token, throwOnFailure: true)) return new(messages, PeekStopReason.EntityNotFound);
+            if (_timeProvider.GetUtcNow() - started >= ScanTimeLimit) return new(messages, PeekStopReason.TimeLimit);
+            if (nextSession)
+            {
+                sessionReceiver = await CreateReceiveReceiverAsync(clean, new(SessionReceiveMode.NextAvailable), deadline.Token, ServiceBusReceiveMode.PeekLock);
+                acceptedId = ((ServiceBusSessionReceiver)sessionReceiver).SessionId;
+                sessionId = acceptedId;
+            }
+            receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
+            stop = await PeekScanCoreAsync(receiver, maxMessages, sessionId, progress, started, deadline.Token);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        {
+            stop = cancellationToken.IsCancellationRequested ? PeekStopReason.Cancelled : PeekStopReason.TimeLimit;
+        }
+        catch (ServiceBusException ex) when (nextSession && sessionReceiver is null && ex.Reason == ServiceBusFailureReason.ServiceTimeout)
+        {
+            stop = _timeProvider.GetUtcNow() - started >= ScanTimeLimit ? PeekStopReason.TimeLimit : PeekStopReason.SessionUnavailable;
+        }
+        catch (ServiceBusException ex) when (nextSession && ex.Reason == ServiceBusFailureReason.SessionCannotBeLocked)
+        {
+            stop = PeekStopReason.SessionLocked;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bounded peek failed for '{Entity}' after {Count} inspected messages", clean, progress.Scanned);
+            stop = PeekStopReason.Failed;
+        }
+        finally
+        {
+            if (receiver is not null && !await DisposeReceiverBoundedAsync(receiver, clean)) stop = PeekStopReason.Failed;
+            if (sessionReceiver is not null && !await DisposeReceiverBoundedAsync(sessionReceiver, clean)) stop = PeekStopReason.Failed;
+        }
+        return new(messages, stop, progress.Scanned, acceptedId);
+    }
+
+    private sealed class PeekProgress
+    {
+        public List<DisplayedMessage> Messages { get; } = [];
+        public int Scanned { get; set; }
+    }
+
+    private async Task<PeekStopReason> PeekScanCoreAsync(ServiceBusReceiver receiver, int maxMessages, string? sessionId,
+        PeekProgress progress, DateTimeOffset started, CancellationToken cancellationToken)
+    {
+        long? next = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (progress.Scanned >= PeekScanLimit) return PeekStopReason.MessageLimit;
+            if (_timeProvider.GetUtcNow() - started >= ScanTimeLimit) return PeekStopReason.TimeLimit;
+            var size = Math.Min(DrainBatchSize, PeekScanLimit - progress.Scanned);
+            if (sessionId is null) size = Math.Min(size, maxMessages - progress.Messages.Count);
+            var batch = await receiver.PeekMessagesAsync(size, next, cancellationToken);
+            progress.Scanned += batch.Count;
+            foreach (var message in batch)
+            {
+                if (sessionId is null || string.Equals(message.SessionId, sessionId, StringComparison.Ordinal))
+                    progress.Messages.Add(ConvertToDisplayedMessage(message));
+                if (progress.Messages.Count == maxMessages) break;
+            }
+            if (progress.Messages.Count == maxMessages || batch.Count == 0) return PeekStopReason.Completed;
+            // Use the last sequence, not batch length: deferred messages and gaps are valid.
+            var last = batch[^1].SequenceNumber;
+            if (last == long.MaxValue) return PeekStopReason.Completed;
+            var following = last + 1;
+            if (next.HasValue && following <= next.Value) throw new InvalidOperationException("Peek pagination did not advance.");
+            next = following;
+        }
+    }
+
+    private async Task<bool> DisposeReceiverBoundedAsync(ServiceBusReceiver receiver, string clean)
+    {
+        Task? disposal = null;
+        try { disposal = receiver.DisposeAsync().AsTask(); await disposal.WaitAsync(CleanupTimeout); return true; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Receiver disposal failed for '{Entity}'", clean);
+            if (disposal is not null) _ = ObserveDisposalAsync(disposal);
+            return false;
+        }
+    }
+
+    private async Task ObserveDisposalAsync(Task disposal)
+    {
+        try { await disposal; }
+        catch (Exception ex) { _logger.LogWarning(ex, "Late receiver disposal failed"); }
+    }
+
+    /// <summary>Peeks without deleting messages, using an ordinary receiver for Main or DLQ.</summary>
+    public async Task<List<Models.DisplayedMessage>> PeekMessagesAsync(string queueName, int maxMessages = 20, CancellationToken cancellationToken = default)
     {
         var clean = CleanEntityName(queueName);
         _logger.LogInformation("Peeking messages from entity '{Entity}' (cleaned: '{Clean}')", queueName, clean);
 
         // Verify entity exists via repository
-        if (!await EntityExistsViaRepoAsync(clean))
+        if (!await EntityExistsViaRepoAsync(clean, cancellationToken))
         {
             var errMsg = $"Entity '{clean}' was not found in the Service Bus namespace (from repository).";
             _logger.LogWarning(errMsg);
             throw new InvalidOperationException(errMsg);
         }
 
-        var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
-        var messages = await receiver.PeekMessagesAsync(maxMessages);
+        await using var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
+        var messages = await receiver.PeekMessagesAsync(maxMessages, cancellationToken: cancellationToken);
         var results = new List<Models.DisplayedMessage>();
         foreach (var m in messages)
         {
@@ -139,20 +645,21 @@ public class ServiceBusService : IAsyncDisposable
         return results;
     }
 
-    public async Task<List<Models.DisplayedMessage>> ReceiveMessagesAsync(string queueName, int maxMessages = 20)
+    /// <summary>Receives and deletes one ordinary batch, preserving the existing return type.</summary>
+    public async Task<List<Models.DisplayedMessage>> ReceiveMessagesAsync(string queueName, int maxMessages = 20, CancellationToken cancellationToken = default)
     {
         var clean = CleanEntityName(queueName);
         _logger.LogInformation("Receiving messages from entity '{Entity}' (cleaned: '{Clean}')", queueName, clean);
 
-        if (!await EntityExistsViaRepoAsync(clean))
+        if (!await EntityExistsViaRepoAsync(clean, cancellationToken))
         {
             var errMsg = $"Entity '{clean}' was not found in the Service Bus namespace (from repository).";
             _logger.LogWarning(errMsg);
             throw new InvalidOperationException(errMsg);
         }
 
-        var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.ReceiveAndDelete });
-        var messages = await receiver.ReceiveMessagesAsync(maxMessages);
+        await using var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.ReceiveAndDelete });
+        var messages = await receiver.ReceiveMessagesAsync(maxMessages, ReceiveIdleWait, cancellationToken);
         var results = new List<Models.DisplayedMessage>();
         foreach (var m in messages)
         {
@@ -252,11 +759,13 @@ public class ServiceBusService : IAsyncDisposable
             clean, msg.MessageId ?? "(none)", body?.Length ?? 0, applicationProperties?.Count ?? 0, msg.ContentType);
     }    
 
-    internal async Task<bool> EntityExistsViaRepoAsync(string cleanedEntityNameLower)
+    internal async Task<bool> EntityExistsViaRepoAsync(string cleanedEntityNameLower, CancellationToken cancellationToken = default, bool throwOnFailure = false)
     {
         try
         {
-            var entities = await _repo.GetEntitiesAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            var entities = await _repo.GetEntitiesAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             _logger.LogDebug("Repository returned {Count} entities for existence check", entities?.Count ?? 0);
             
             // Check if it ends with /$DeadLetterQueue and strip it for validation
@@ -303,9 +812,14 @@ public class ServiceBusService : IAsyncDisposable
             }
             return false;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to check entity existence via repository");
+            if (throwOnFailure) throw;
             return false;
         }
     }
@@ -369,74 +883,30 @@ public class ServiceBusService : IAsyncDisposable
         return dm;
     }
 
-    public async Task DeadLetterMessageAsync(string queueName, long sequenceNumber, string? reason = null, string? errorDescription = null)
-    {
-        var clean = CleanEntityName(queueName);
-        _logger.LogInformation("Dead-lettering message with sequence number {SequenceNumber} from entity '{Entity}' (cleaned: '{Clean}')", sequenceNumber, queueName, clean);
+    /// <summary>
+    /// Rejects sequence-based settlement: peeked messages have no settlement lock.
+    /// Safe dead-lettering requires a received, locked message and its owning receiver.
+    /// No repository or broker calls are made.
+    /// </summary>
+    public Task DeadLetterMessageAsync(string queueName, long sequenceNumber, string? reason = null, string? errorDescription = null, CancellationToken cancellationToken = default)
+        => cancellationToken.IsCancellationRequested
+            ? Task.FromCanceled(cancellationToken)
+            : Task.FromException(new NotSupportedException("Peeked messages cannot be dead-lettered by sequence number. Settlement requires a received, locked message and its owning receiver."));
 
-        if (!await EntityExistsViaRepoAsync(clean))
-        {
-            var errMsg = $"Entity '{clean}' was not found in the Service Bus namespace (from repository).";
-            _logger.LogWarning(errMsg);
-            throw new InvalidOperationException(errMsg);
-        }
-
-        var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
-        
-        try
-        {
-            // Receive messages and find the one with matching sequence number
-            // We may need to receive multiple messages to find the target
-            var found = false;
-            var maxAttempts = 100; // Limit attempts to avoid infinite loop
-            var attempts = 0;
-            
-            while (!found && attempts < maxAttempts)
-            {
-                var messages = await receiver.ReceiveMessagesAsync(32, TimeSpan.FromSeconds(2));
-                
-                if (!messages.Any())
-                    break;
-                
-                foreach (var message in messages)
-                {
-                    if (message.SequenceNumber == sequenceNumber)
-                    {
-                        // Found it! Dead-letter this message
-                        await receiver.DeadLetterMessageAsync(message, reason ?? "Manual dead-letter", errorDescription ?? "Message manually dead-lettered from UI");
-                        _logger.LogInformation("Successfully dead-lettered message {SequenceNumber} from '{Entity}'", sequenceNumber, clean);
-                        found = true;
-                        break;
-                    }
-                    else
-                    {
-                        // Not the target, abandon it so it goes back to the queue
-                        await receiver.AbandonMessageAsync(message);
-                    }
-                }
-                
-                attempts++;
-            }
-            
-            if (!found)
-            {
-                var errMsg = $"Message with sequence number {sequenceNumber} not found in entity '{clean}' after {attempts} attempts.";
-                _logger.LogWarning(errMsg);
-                throw new InvalidOperationException(errMsg);
-            }
-        }
-        finally
-        {
-            await receiver.DisposeAsync();
-        }
-    }
+    /// <summary>
+    /// Rejects sequence-based settlement without receiving or abandoning unrelated messages.
+    /// A session ID does not supply the message lock required for safe settlement.
+    /// </summary>
+    public Task<DeadLetterMessageResult> DeadLetterMessageWithSessionAsync(string queueName, long sequenceNumber,
+        string? sessionId = null, string? reason = null, string? errorDescription = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(new DeadLetterMessageResult(cancellationToken.IsCancellationRequested
+            ? DeadLetterStatus.Cancelled
+            : DeadLetterStatus.Unsupported));
 
     public async ValueTask DisposeAsync()
     {
-        if (_client != null)
-        {
-            await _client.DisposeAsync();
-        }
+        if (_client != null) await _client.DisposeAsync();
+        if (_lockedClient != null && !ReferenceEquals(_lockedClient, _client)) await _lockedClient.DisposeAsync();
     }
 
     /// <summary>

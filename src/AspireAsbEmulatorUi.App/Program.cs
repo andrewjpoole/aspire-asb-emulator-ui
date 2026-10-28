@@ -132,7 +132,11 @@ builder.Services.AddSingleton(sp =>
     return service;
 });
 
+builder.Services.AddSingleton<SessionMetadataService>();
 builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<ReceivedMessageCircuitHandler>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Components.Server.Circuits.CircuitHandler>(sp =>
+    sp.GetRequiredService<ReceivedMessageCircuitHandler>());
 builder.Services.AddSingleton<PlaceholderService>();
 
 var app = builder.Build();

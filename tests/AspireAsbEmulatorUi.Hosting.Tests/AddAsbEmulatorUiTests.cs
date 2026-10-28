@@ -23,6 +23,49 @@ public class AddAsbEmulatorUiTests
     }
 
     [Test]
+    [Arguments(true)]
+    [Arguments(false)]
+    public async Task WireUpToAsbEmulator_ExposesManagementEndpointOnlyWhenAvailable(bool hasManagementEndpoint)
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var serviceBus = builder.AddAzureServiceBus("servicebus").RunAsEmulator();
+        var sql = builder.Resources.Single(r => r.Name == "servicebus-mssql");
+        var sqlEndpoint = sql.Annotations.OfType<EndpointAnnotation>().First();
+        sqlEndpoint.AllocatedEndpoint = new AllocatedEndpoint(sqlEndpoint, "localhost", 14330);
+        sql.Annotations.Add(new ResourceUrlAnnotation { Url = "tcp://localhost:14330", Endpoint = new EndpointReference((IResourceWithEndpoints)sql, sqlEndpoint.Name) });
+        var management = serviceBus.Resource.Annotations.OfType<EndpointAnnotation>().Single(e => e.Name == "emulatorhealth");
+        await Assert.That(management.TargetPort).IsEqualTo(5300);
+        if (!hasManagementEndpoint) serviceBus.Resource.Annotations.Remove(management);
+        var variables = new Dictionary<string, object>();
+        var context = new EnvironmentCallbackContext(
+            new DistributedApplicationExecutionContext(DistributedApplicationOperation.Run), variables, CancellationToken.None);
+
+        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
+
+        await Assert.That(variables.ContainsKey("asb-management-endpoint")).IsEqualTo(hasManagementEndpoint);
+        if (hasManagementEndpoint)
+        {
+            await Assert.That(variables["asb-management-endpoint"] is EndpointReference).IsTrue();
+            var endpoint = (EndpointReference)variables["asb-management-endpoint"];
+            await Assert.That(endpoint.EndpointName).IsEqualTo("emulatorhealth");
+        }
+    }
+
+    [Test]
+    public async Task WireUpToAsbEmulator_PublishMode_DoesNotExposeManagementEndpoint()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var serviceBus = builder.AddAzureServiceBus("servicebus").RunAsEmulator();
+        var variables = new Dictionary<string, object>();
+        var context = new EnvironmentCallbackContext(
+            new DistributedApplicationExecutionContext(DistributedApplicationOperation.Publish), variables, CancellationToken.None);
+
+        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
+
+        await Assert.That(variables).IsEmpty();
+    }
+
+    [Test]
     public async Task AddAsbEmulatorUi_WithCustomPort_ShouldUseSpecifiedPort()
     {
         // Arrange

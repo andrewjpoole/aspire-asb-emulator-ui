@@ -4,6 +4,7 @@
 @using System.Threading
 @inject AspireAsbEmulatorUi.App.Services.AsbEmulatorSqlEntityRepository Repo
 @inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
+@inject AspireAsbEmulatorUi.App.Services.SessionMetadataService SessionMetadata
 @inject AspireAsbEmulatorUi.App.Services.SettingsService SettingsService
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @inject NavigationManager Navigation
@@ -257,11 +258,11 @@
                 <div class="flex-1 overflow-y-auto p-4">
                     @if (_activeTab == "viewer")
                     {
-                        <MessageViewer SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" OnEntityChanged="RefreshEntities" />
+                        <MessageViewer SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" RequiresSession="@SelectedRequiresSession" OnEntityChanged="RefreshEntities" />
                     }
                     else if (_activeTab == "sender")
                     {
-                        <MessageSender SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" OnEntityChanged="RefreshEntities" />
+                        <MessageSender SelectedEntity="@_selectedEntity" DisplayName="@_selectedDisplayName" RequiresSession="@SelectedRequiresSession" HasSessionSubscriptions="@SelectedHasSessionSubscriptions" OnEntityChanged="RefreshEntities" />
                     }
                 </div>
             }
@@ -276,6 +277,12 @@
     private string _selectedEntity = string.Empty;
     private string _selectedDisplayName = string.Empty;
     private string _selectedEntityType = string.Empty;
+
+    private bool? SelectedRequiresSession => _entities.FirstOrDefault(e =>
+        e.Name == _selectedEntity && e.EntityType == _selectedEntityType)?.RequiresSession;
+
+    private bool SelectedHasSessionSubscriptions => _selectedEntityType == "Topic" &&
+        _entities.Any(e => e.EntityType == "Subscription" && e.ParentTopic == _selectedEntity && e.RequiresSession == true);
 
     private string _sendBody = string.Empty;
     private string _sendResult = string.Empty;
@@ -312,6 +319,7 @@
         try
         {
             var entities = await Repo.GetEntitiesAsync();
+            await SessionMetadata.EnrichEntitiesAsync(entities);
             _entities = await Bus.EnrichEntitiesWithMessageCountsAsync(entities);
             _lastRefreshed = DateTime.Now;
         }
