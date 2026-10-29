@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.31</Version>
+	<Version>1.0.32</Version>
 	<PackageReleaseNotes>
+		1.0.32 Simplify Receive confirmations and clarify message lock and Clear warnings.
 		1.0.31 Add scoped queue clearing, session support, lock-backed message settlement and DLQ replay.
 		1.0.30 Add temporary security pins for MessagePack, System.IdentityModel.Tokens.Jwt and YamlDotNet.
 		1.0.29 Refresh container base images on every build to pick up .NET security patches.

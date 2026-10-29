@@ -11,6 +11,9 @@ internal static class ViewerSessionSelection
     internal static bool PreserveReceivedBatch(bool isDlq, ViewerMode previousMode, ViewerMode nextMode) =>
         isDlq && previousMode is ViewerMode.Receive or ViewerMode.Clear && nextMode is ViewerMode.Receive or ViewerMode.Clear;
 
+    internal static bool RequiresReceiveConfirmation(IEnumerable<LockedMessageState> states) =>
+        states.Any(state => state is LockedMessageState.Locked or LockedMessageState.Settling or LockedMessageState.Unknown);
+
     internal static ViewerSessionScope Normalize(ViewerMode mode, ViewerSessionScope scope) =>
         mode == ViewerMode.Receive && scope == ViewerSessionScope.All
             ? ViewerSessionScope.NextAvailableSession

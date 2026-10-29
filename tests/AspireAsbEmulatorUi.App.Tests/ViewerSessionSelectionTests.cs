@@ -59,6 +59,19 @@ public class ViewerSessionSelectionTests
     }
 
     [Test]
+    public async Task ReceiveConfirmation_OnlyRequiredForUnsettledLocks()
+    {
+        await Assert.That(ViewerSessionSelection.RequiresReceiveConfirmation([])).IsFalse();
+        foreach (var state in Enum.GetValues<LockedMessageState>())
+            await Assert.That(ViewerSessionSelection.RequiresReceiveConfirmation([state]))
+                .IsEqualTo(state is LockedMessageState.Locked or LockedMessageState.Settling or LockedMessageState.Unknown);
+        await Assert.That(ViewerSessionSelection.RequiresReceiveConfirmation(
+            [LockedMessageState.Completed, LockedMessageState.DeadLettered, LockedMessageState.Expired])).IsFalse();
+        await Assert.That(ViewerSessionSelection.RequiresReceiveConfirmation(
+            [LockedMessageState.Completed, LockedMessageState.Locked])).IsTrue();
+    }
+
+    [Test]
     public async Task AllScope_CannotBePassedToSingleSessionReceiver()
     {
         await Assert.That(() => ViewerSessionSelection.ReceiverOptions(true, ViewerSessionScope.All, ""))

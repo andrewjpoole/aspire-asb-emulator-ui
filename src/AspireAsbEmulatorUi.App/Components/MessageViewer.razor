@@ -91,7 +91,7 @@
     else if (_mode == ViewerMode.Receive)
     {
         <div class="rounded p-3 mb-3 bg-slate-800 text-slate-200">
-            Receive locks messages temporarily. Complete deletes a message; Dead-Letter moves it to the DLQ.
+            Receive locks messages without requesting deletion. @(_isDlqSelected ? "Choose Complete or Replay for DLQ messages." : "Choose Complete or Dead-Letter for each message.")
             Reloading, navigating away, or letting unprocessed locks expire allows redelivery and can increase delivery counts, eventually causing automatic dead-lettering. Locks are not renewed.
             @if (_isDlqSelected)
             {
@@ -468,19 +468,19 @@
     private Task ExecuteAction()
     {
         if (_mode == ViewerMode.Clear) RequestClear();
-        else if (_mode == ViewerMode.Receive) RequestReceive();
+        else if (_mode == ViewerMode.Receive) return RequestReceive();
         else return LoadMessages();
         return Task.CompletedTask;
     }
 
-    private void RequestReceive()
+    private Task RequestReceive()
     {
-        if (_disposed || ViewerBusy || string.IsNullOrWhiteSpace(SelectedEntity)) return;
+        if (_disposed || ViewerBusy || string.IsNullOrWhiteSpace(SelectedEntity)) return Task.CompletedTask;
         var options = SessionOptions;
         if (options.Mode == SessionReceiveMode.Specified && string.IsNullOrWhiteSpace(options.SessionId))
         {
             _operationResult = "Enter a session ID before receiving.";
-            return;
+            return Task.CompletedTask;
         }
         var target = SelectedEntity + (_isDlqSelected ? "/$DeadLetterQueue" : string.Empty);
         var scope = _isDlqSelected ? "DLQ" : "Main";
@@ -490,11 +490,15 @@
             SessionReceiveMode.Specified => $" from session '{options.SessionId}'",
             _ => string.Empty
         };
-        _pendingConfirmation = new(ConfirmationKind.Receive, target, options, false, _operationGeneration,
-            $"Receive and lock up to {Math.Clamp(_maxMessages, 1, 100)} messages from {DisplayName} ({scope}){session}?",
-            "Messages are not deleted until Complete or Replay. Dead-Letter moves a message to the DLQ. Outstanding locks from the previous Load will be closed; expiry/redelivery can increase delivery counts and cause automatic dead-lettering. Locks are not renewed.",
+        var request = new PendingConfirmation(ConfirmationKind.Receive, target, options, false, _operationGeneration,
+            $"Replace the current batch and receive up to {Math.Clamp(_maxMessages, 1, 100)} messages from {DisplayName} ({scope}){session}?",
+            "Unsettled locks from the current batch will be closed. Expiry/redelivery can increase delivery counts and cause automatic dead-lettering. The new batch is received under PeekLock, without requesting deletion.",
             Math.Clamp(_maxMessages, 1, 100));
+        if (!ViewerSessionSelection.RequiresReceiveConfirmation(
+            _receivedBatch?.Entries.Select(entry => entry.State) ?? [])) return LoadMessages(request);
+        _pendingConfirmation = request;
         _focusClearDialog = true;
+        return Task.CompletedTask;
     }
 
     private void SetWatch(bool enabled)
@@ -695,10 +699,13 @@
             SessionReceiveMode.Specified => $" in session '{options.SessionId}' only",
             _ => string.Empty
         };
+        var receivedDlqBatch = _isDlqSelected ? _receivedBatch : null;
+        var ownedLocksWarning = receivedDlqBatch is null ? string.Empty
+            : " Messages received and locked by this viewer are completed first.";
         _pendingConfirmation = new(ConfirmationKind.Clear, target, options, allSessions, _operationGeneration,
             $"Permanently delete currently available messages from {DisplayName} ({scope}){sessionScope}?",
-            "This cannot be undone. Clearing includes messages received and locked by this viewer, then currently available messages. It stops after 10,000 messages or 30 seconds; messages locked elsewhere, scheduled or deferred may remain.",
-            ReceivedDlqBatch: _isDlqSelected ? _receivedBatch : null);
+            $"This cannot be undone.{ownedLocksWarning} Clearing stops after 10,000 messages or 30 seconds; messages locked elsewhere, scheduled or deferred may remain.",
+            ReceivedDlqBatch: receivedDlqBatch);
         _focusClearDialog = true;
     }
 
