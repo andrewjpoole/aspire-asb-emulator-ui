@@ -19,7 +19,9 @@ var builder = DistributedApplication.CreateBuilder(args);
 // Add Azure Service Bus and configure it to run with the emulator
 var serviceBus = builder
     .AddAzureServiceBus("myservicebus")
-    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent));
+    .RunAsEmulator(c => c.WithLifetime(ContainerLifetime.Persistent)
+        .WithUi(hideEmulatorResourceinAspireDashboard: false)
+        .WithOverridenSettingsFile("settings.json"));
 
 serviceBus.AddServiceBusQueue("queue-one");
 serviceBus.AddServiceBusQueue("queue-two");
@@ -45,18 +47,6 @@ topic.AddServiceBusSubscription("sub1")
          // If SqlFilters are needed, supply the emulator config json file with the required filters.
          subscription.ForwardTo = "topic-sub1-fwd";
      });
-
-// Run the UI from source so local changes are available without publishing a Docker image.
-builder.AddProject<Projects.AspireAsbEmulatorUi_App>("asb-ui")
-    .WithReference(serviceBus)
-    .WaitFor(serviceBus)
-    .ExcludeFromManifest()
-    .WithOverridenSettingsFile("settings.json")
-    .WithEnvironment(async context =>
-    {
-        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
-    });
-
 
 // Add MessageHandler console app to process messages from queue-one
 builder.AddProject<Projects.MessageHandler>("message-handler")
