@@ -15,15 +15,16 @@ public static class ReceivedDlqClearOperation
         Func<int, CancellationToken, Task<DrainMessagesResult>> drain, CancellationToken token = default)
         => ClearAsync(batch, drain, token, ServiceBusService.DrainTimeLimit);
 
-    // Real linked-token deadline with a shorter duration seam for deterministic, broker-independent tests.
+    // Injectable deadline clock lets tests expire the shared budget without wall-clock races.
     internal static async Task<DrainMessagesResult> ClearAsync(LockedMessageBatch batch,
-        Func<int, CancellationToken, Task<DrainMessagesResult>> drain, CancellationToken token, TimeSpan timeLimit)
+        Func<int, CancellationToken, Task<DrainMessagesResult>> drain, CancellationToken token, TimeSpan timeLimit,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(drain);
         if (!batch.IsDeadLetterQueue) return new(0, DrainStopReason.Failed);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(timeLimit);
+        using var timeout = new CancellationTokenSource(timeLimit, timeProvider ?? TimeProvider.System);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, timeout.Token);
         var count = 0;
         var unresolved = false;
         DrainStopReason CancellationReason() => token.IsCancellationRequested ? DrainStopReason.Cancelled : DrainStopReason.TimeLimit;

@@ -165,15 +165,25 @@ public class ReceivedDlqClearOperationTests
     [Test]
     public async Task One_Deadline_Covers_Completion_And_Drain()
     {
-        var receiver = new FakeReceiver { Settle = async (_, token) => await Task.Delay(70, token) };
+        var clock = new ManualDeadlineClock();
+        var receiver = new FakeReceiver { Settle = (_, _) =>
+        {
+            clock.Advance(TimeSpan.FromSeconds(10));
+            return Task.CompletedTask;
+        } };
         await using var batch = CreateBatch(receiver, Messages(1));
         var calls = 0;
         var result = await ReceivedDlqClearOperation.ClearAsync(batch, async (_, token) =>
         {
             calls++;
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            await Assert.That(token.IsCancellationRequested).IsFalse();
+            clock.Advance(TimeSpan.FromSeconds(19));
+            await Assert.That(token.IsCancellationRequested).IsFalse();
+            clock.Advance(TimeSpan.FromSeconds(1));
+            await Assert.That(token.IsCancellationRequested).IsTrue();
+            token.ThrowIfCancellationRequested();
             return new(0, DrainStopReason.Empty);
-        }, default, TimeSpan.FromMilliseconds(180));
+        }, default, TimeSpan.FromSeconds(30), clock);
         await Assert.That(result).IsEqualTo(new DrainMessagesResult(1, DrainStopReason.TimeLimit));
         await Assert.That(calls).IsEqualTo(1);
         await Assert.That(receiver.CompletedMessages.Count).IsEqualTo(1);
@@ -214,6 +224,40 @@ public class ReceivedDlqClearOperationTests
         var result = await ReceivedDlqClearOperation.ClearAsync(batch,
             (_, _) => throw new InvalidOperationException("transport failure"));
         await Assert.That(result).IsEqualTo(new DrainMessagesResult(1, DrainStopReason.Failed));
+    }
+
+    private sealed class ManualDeadlineClock : TimeProvider
+    {
+        private TimeSpan _elapsed;
+        private DeadlineTimer? _timer;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+            => _timer = new DeadlineTimer(callback, state, _elapsed + dueTime);
+
+        internal void Advance(TimeSpan duration)
+        {
+            _elapsed += duration;
+            _timer?.FireIfDue(_elapsed);
+        }
+
+        private sealed class DeadlineTimer(TimerCallback callback, object? state, TimeSpan due) : ITimer
+        {
+            private bool _disposed;
+            private bool _fired;
+
+            internal void FireIfDue(TimeSpan elapsed)
+            {
+                if (_disposed || _fired || elapsed < due) return;
+                _fired = true;
+                callback(state);
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) =>
+                throw new NotSupportedException("This test clock only supports one-shot deadline timers.");
+
+            public void Dispose() => _disposed = true;
+            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+        }
     }
 
     private static IReadOnlyList<ServiceBusReceivedMessage> Messages(int count)
