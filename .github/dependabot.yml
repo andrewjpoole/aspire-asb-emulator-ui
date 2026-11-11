@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directories:
+      - "/aspire/*"
+      - "/dummy-apps/*"
+      - "/src/*"
+      - "/tests/*"
+    schedule:
+      interval: weekly
+    groups:
+      aspire:
+        patterns:
+          - "Aspire.*"
+      microsoft-extensions:
+        patterns:
+          - "Microsoft.Extensions.*"
+          - "Microsoft.AspNetCore.*"
+    # The sample AppHost's reference to our own published package is bumped manually after each release.
+    ignore:
+      - dependency-name: "AJP.Aspire.Hosting.AsbEmulatorUi"
+
+  - package-ecosystem: docker
+    directory: "/src/AspireAsbEmulatorUi.App"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
