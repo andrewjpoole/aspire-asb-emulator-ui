@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.0.32</Version>
+	<Version>1.0.33</Version>
 	<PackageReleaseNotes>
+		1.0.33 Rebuild container image to pick up Ubuntu security patches for apt, libapt-pkg and pcre.
 		1.0.32 Simplify Receive confirmations and clarify message lock and Clear warnings.
 		1.0.31 Add scoped queue clearing, session support, lock-backed message settlement and DLQ replay.
 		1.0.30 Add temporary security pins for MessagePack, System.IdentityModel.Tokens.Jwt and YamlDotNet.
