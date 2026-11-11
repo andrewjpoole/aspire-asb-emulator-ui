@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.Azure.ServiceBus" Version="13.6.5" />
-    <PackageReference Include="Labcoat.Aspire.Hosting" Version="1.1.2" />
+    <PackageReference Include="Labcoat.Aspire.Hosting" Version="1.2.3" />
     <PackageReference Include="AJP.Aspire.Hosting.AsbEmulatorUi" Version="1.0.34" />
   </ItemGroup>
 
