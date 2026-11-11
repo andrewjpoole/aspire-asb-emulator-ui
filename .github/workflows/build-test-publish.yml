@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -41,9 +45,16 @@ jobs:
       if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
       run: dotnet pack src/AspireAsbEmulatorUi.Hosting/AspireAsbEmulatorUi.Hosting.csproj --configuration Release --no-build --output ./artifacts
 
+    - name: NuGet login (Trusted Publishing)
+      id: nuget_login
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+      uses: NuGet/login@v1
+      with:
+        user: andrewpoole
+
     - name: Publish to NuGet
       if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-      run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ steps.nuget_login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
     - name: Upload NuGet packages
       if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
