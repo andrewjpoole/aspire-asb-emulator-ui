@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Testing.Platform.MSBuild" Version="2.4.0" />
     <PackageReference Include="TUnit" Version="1.66.8" />
-    <PackageReference Include="TUnit.Assertions" Version="1.66.8" />
+    <PackageReference Include="TUnit.Assertions" Version="1.83.0" />
     <PackageReference Include="TUnit.Engine" Version="1.66.8" />
     <PackageReference Include="NSubstitute" Version="6.2.0" />
   </ItemGroup>
