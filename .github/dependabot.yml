@@ -19,6 +19,11 @@ updates:
     # The sample AppHost's reference to our own published package is bumped manually after each release.
     ignore:
       - dependency-name: "AJP.Aspire.Hosting.AsbEmulatorUi"
+      # Major versions of these track the .NET release (11.x needs a .NET 11 migration), so skip them until then.
+      - dependency-name: "Microsoft.Extensions.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: "/src/AspireAsbEmulatorUi.App"
