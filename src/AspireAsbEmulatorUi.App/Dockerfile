@@ -1,5 +1,5 @@
 # Build stage
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Set NuGet package folder to a Linux path to avoid Windows fallback-folder issues
@@ -22,7 +22,7 @@ FROM build AS publish
 RUN dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 WORKDIR /app
 
 # Expose port 8080 (standard port for non-root containers)

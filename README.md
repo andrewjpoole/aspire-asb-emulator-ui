@@ -1,4 +1,4 @@
-﻿![.NET 10](https://img.shields.io/badge/.NET-10-blue) ![Blazor](https://img.shields.io/badge/Blazor-Interactive%20Server-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC)
+﻿![.NET 11](https://img.shields.io/badge/.NET-11-blue) ![Blazor](https://img.shields.io/badge/Blazor-Interactive%20Server-purple) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-38B2AC)
 
 # Azure Service Bus Emulator UI
 
@@ -214,7 +214,7 @@ Use placeholders in message bodies for dynamic test data:
 - **Tailwind CSS** - Modern styling
 - **Monaco Editor** - VS Code-powered editing
 - **Azure Service Bus Client SDK** - Native ASB operations
-- **.NET 10** - Latest .NET
+- **.NET 11** - Latest .NET
 
 ## API
 
