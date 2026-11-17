@@ -19,7 +19,13 @@ COPY . .
 
 # Publish in one step (let publish handle restore to avoid restore/build mismatch inside container)
 FROM build AS publish
-RUN dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -o /app/publish /p:UseAppHost=false
+# Publish for the target Linux RID so only Linux native assets are included. Without a RID,
+# transitive packages (e.g. Hex1b via Aspire.Hosting) drop Windows/macOS natives such as
+# conpty.dll and OpenConsole.exe into runtimes/, which are useless here and get flagged by scanners.
+# TARGETARCH is supplied by BuildKit (amd64 / arm64).
+ARG TARGETARCH
+RUN RID="linux-$( [ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64 )" && \
+    dotnet publish "AspireAsbEmulatorUi.App/AspireAsbEmulatorUi.App.csproj" -c Release -r "$RID" --self-contained false -o /app/publish /p:UseAppHost=false
 
 # Runtime stage
 # Chiseled image: no shell, package manager, perl, etc. -> far smaller CVE surface.
