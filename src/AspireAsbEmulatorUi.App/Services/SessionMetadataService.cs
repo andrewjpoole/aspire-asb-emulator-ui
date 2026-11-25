@@ -17,34 +17,11 @@ public sealed class SessionMetadataService
     {
         _logger = logger;
         _lookupTimeout = TimeSpan.FromSeconds(2);
-        var connectionString = configuration["asb-management-connectionstring"] ?? configuration["ASB_MANAGEMENT_CONNECTIONSTRING"];
-        var endpoint = configuration["asb-management-endpoint"] ?? configuration["ASB_MANAGEMENT_ENDPOINT"];
-        if (string.IsNullOrWhiteSpace(connectionString) && string.IsNullOrWhiteSpace(endpoint)) return;
-
         try
         {
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
-                    (uri.Scheme != "http" && uri.Scheme != "https") ||
-                    !string.IsNullOrEmpty(uri.UserInfo) || uri.AbsolutePath != "/" ||
-                    !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment))
-                {
-                    logger.LogDebug("Session metadata management endpoint is invalid; metadata remains unknown.");
-                    return;
-                }
-
-                // Aspire's emulator connection string uses these fixed development credentials.
-                // The administration SDK selects plain HTTP when UseDevelopmentEmulator=true.
-                connectionString = $"Endpoint=sb://{uri.Authority};SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;";
-            }
-
-            var options = new ServiceBusAdministrationClientOptions();
-            options.Retry.MaxRetries = 0;
-            options.Retry.NetworkTimeout = _lookupTimeout;
-            _client = new ServiceBusAdministrationClient(connectionString, options);
+            _client = new ServiceBusAdministrationOptions(configuration).CreateClient();
         }
-        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        catch (InvalidOperationException)
         {
             logger.LogDebug("Session metadata management configuration is invalid; metadata remains unknown.");
         }
@@ -63,14 +40,14 @@ public sealed class SessionMetadataService
     /// <summary>Enriches only queue/subscription session flags; unavailable metadata stays unknown.</summary>
     public async Task EnrichEntitiesAsync(IReadOnlyList<ServiceBusEntityInfo> entities, CancellationToken cancellationToken = default)
     {
-        foreach (var entity in entities) entity.RequiresSession = null;
+        foreach (var entity in entities.Where(e => !e.DiscoveredViaAdministration)) entity.RequiresSession = null;
         if (_client is null) return;
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_lookupTimeout);
         try
         {
-            await Parallel.ForEachAsync(entities, new ParallelOptions
+            await Parallel.ForEachAsync(entities.Where(e => !e.DiscoveredViaAdministration), new ParallelOptions
             {
                 MaxDegreeOfParallelism = 8,
                 CancellationToken = timeout.Token

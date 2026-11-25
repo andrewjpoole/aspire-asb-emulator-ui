@@ -10,6 +10,8 @@ public class ServiceBusEntityInfo
     public bool? RequiresSession { get; set; }
     public long ActiveMessageCount { get; set; }
     public long DeadletterMessageCount { get; set; }
+    public bool MessageCountsKnown { get; set; }
+    public bool DiscoveredViaAdministration { get; set; }
 
     public string DisplayName
     {

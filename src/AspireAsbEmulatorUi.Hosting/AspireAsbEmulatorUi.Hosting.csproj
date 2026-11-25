@@ -8,8 +8,9 @@
 	<IsPackable>true</IsPackable>
 	<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 	<PackageId>AJP.Aspire.Hosting.AsbEmulatorUi</PackageId>
-	<Version>1.1.4</Version>
+	<Version>1.2.0</Version>
 	<PackageReleaseNotes>
+		1.2.0 Prefer administration APIs for entity discovery, session metadata and runtime counts; add administration-only and legacy SQL modes for Microsoft and community emulators.
 		1.1.4 Exclude subscription rules from entity discovery to avoid invalid message-count requests and slow refreshes.
 		1.1.2 Publish the container image for its Linux RID so Windows/macOS native assets (e.g. conpty.dll) are no longer included.
 		1.1.1 Multi-target net10.0 and net11.0 so .NET 10 AppHosts can use the package. Container image now uses the chiseled .NET 11 runtime (no perl/shell).

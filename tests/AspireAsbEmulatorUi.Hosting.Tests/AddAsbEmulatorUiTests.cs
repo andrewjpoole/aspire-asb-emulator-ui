@@ -66,6 +66,22 @@ public class AddAsbEmulatorUiTests
     }
 
     [Test]
+    public async Task WireUpToAsbEmulator_ManagementDoesNotRequireSqlResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var serviceBus = builder.AddAzureServiceBus("servicebus").RunAsEmulator();
+        builder.Resources.Remove(builder.Resources.Single(r => r.Name == "servicebus-mssql"));
+        var variables = new Dictionary<string, object>();
+        var context = new EnvironmentCallbackContext(
+            new DistributedApplicationExecutionContext(DistributedApplicationOperation.Run), variables, CancellationToken.None);
+
+        await AsbEmulatorUiResourceExtensions.WireUpToAsbEmulator(context, serviceBus);
+
+        await Assert.That(variables.ContainsKey("asb-management-endpoint")).IsTrue();
+        await Assert.That(variables.ContainsKey("asb-sql-password")).IsFalse();
+    }
+
+    [Test]
     public async Task AddAsbEmulatorUi_WithCustomPort_ShouldUseSpecifiedPort()
     {
         // Arrange

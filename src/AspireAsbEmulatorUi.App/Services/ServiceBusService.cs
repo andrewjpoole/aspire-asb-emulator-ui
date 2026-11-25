@@ -8,7 +8,7 @@ public class ServiceBusService : IAsyncDisposable
 {
     private readonly string _connectionString;
     private readonly ILogger<ServiceBusService> _logger;
-    private readonly AsbEmulatorSqlEntityRepository _repo;
+    private readonly IServiceBusEntityRepository _repo;
     private ServiceBusClient? _client;
     private readonly object _lockedClientSync = new();
     private ServiceBusClient? _lockedClient;
@@ -25,7 +25,7 @@ public class ServiceBusService : IAsyncDisposable
     internal static readonly TimeSpan ScanTimeLimit = TimeSpan.FromSeconds(30);
     internal static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(2);
 
-    public ServiceBusService(string connectionString, ILogger<ServiceBusService> logger, AsbEmulatorSqlEntityRepository repo)
+    public ServiceBusService(string connectionString, ILogger<ServiceBusService> logger, IServiceBusEntityRepository repo)
     {
         _connectionString = connectionString;
         _logger = logger;
@@ -44,7 +44,7 @@ public class ServiceBusService : IAsyncDisposable
     // Allows tests to supply SDK fakes and a controllable clock without a live broker,
     // while preserving the public constructor and lazy client ownership in production.
     internal ServiceBusService(string connectionString, ILogger<ServiceBusService> logger,
-        AsbEmulatorSqlEntityRepository repo, Func<string, ServiceBusClient> clientFactory, TimeProvider? timeProvider = null,
+        IServiceBusEntityRepository repo, Func<string, ServiceBusClient> clientFactory, TimeProvider? timeProvider = null,
         Func<string, ServiceBusClient>? lockedClientFactory = null)
         : this(connectionString, logger, repo)
     {
@@ -915,67 +915,71 @@ public class ServiceBusService : IAsyncDisposable
     /// </summary>
     public async Task<(long ActiveCount, long DeadLetterCount)> GetMessageCountsByPeekingAsync(string entityName, int maxPeek = 100)
     {
-        var clean = CleanEntityName(entityName);
-        
+        using var timeout = new CancellationTokenSource(ServiceBusAdministrationOptions.OperationTimeout);
         try
         {
-            // Peek main queue/subscription
-            long activeCount = 0;
-            try
-            {
-                var receiver = Client.CreateReceiver(clean, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
-                var messages = await receiver.PeekMessagesAsync(maxPeek);
-                activeCount = messages.Count;
-                await receiver.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Could not peek main queue '{Entity}', count will be 0", clean);
-            }
-
-            // Peek DLQ
-            long deadLetterCount = 0;
-            try
-            {
-                var dlqPath = $"{clean}/$DeadLetterQueue";
-                var dlqReceiver = Client.CreateReceiver(dlqPath, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
-                var dlqMessages = await dlqReceiver.PeekMessagesAsync(maxPeek);
-                deadLetterCount = dlqMessages.Count;
-                await dlqReceiver.DisposeAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Could not peek DLQ for '{Entity}', count will be 0", clean);
-            }
-
-            return (activeCount, deadLetterCount);
+            var counts = await PeekMessageCountsAsync(entityName, maxPeek, timeout.Token).WaitAsync(timeout.Token);
+            return (counts.ActiveCount, counts.DeadLetterCount);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to get message counts by peeking for '{Entity}'", clean);
+            _logger.LogDebug("Message counts unavailable for '{Entity}' ({ExceptionType})", entityName, ex.GetType().Name);
             return (0, 0);
         }
+    }
+
+    private async Task<(long ActiveCount, long DeadLetterCount, bool Known)> PeekMessageCountsAsync(string entityName, int maxPeek, CancellationToken cancellationToken)
+    {
+        var clean = CleanEntityName(entityName);
+        var known = true;
+        async Task<long> CountAsync(string path)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ServiceBusReceiver? receiver = null;
+            try
+            {
+                receiver = Client.CreateReceiver(path, new ServiceBusReceiverOptions { ReceiveMode = ServiceBusReceiveMode.PeekLock });
+                return (await receiver.PeekMessagesAsync(maxPeek, cancellationToken: cancellationToken).WaitAsync(cancellationToken)).Count;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                known = false;
+                _logger.LogDebug("Message counts unavailable for '{Entity}' ({ExceptionType})", path, ex.GetType().Name);
+                return 0;
+            }
+            finally { if (receiver is not null) await DisposeReceiverBoundedAsync(receiver, path); }
+        }
+
+        var active = await CountAsync(clean);
+        var deadLetter = await CountAsync($"{clean}/$DeadLetterQueue");
+        return (active, deadLetter, known);
     }
 
     /// <summary>
     /// Enriches a list of entities with message counts by peeking.
     /// This allows the repository to focus on entity discovery while this service handles message counting.
     /// </summary>
-    public async Task<List<Models.ServiceBusEntityInfo>> EnrichEntitiesWithMessageCountsAsync(List<Models.ServiceBusEntityInfo> entities, int maxPeek = 100)
+    public async Task<List<Models.ServiceBusEntityInfo>> EnrichEntitiesWithMessageCountsAsync(List<Models.ServiceBusEntityInfo> entities, int maxPeek = 100,
+        CancellationToken cancellationToken = default)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ServiceBusAdministrationOptions.OperationTimeout);
         foreach (var entity in entities)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if ((entity.DiscoveredViaAdministration && entity.MessageCountsKnown) || entity.EntityType == "Topic") continue;
+            entity.MessageCountsKnown = false;
+            if (timeout.IsCancellationRequested) continue;
             try
             {
-                var counts = await GetMessageCountsByPeekingAsync(entity.Name, maxPeek);
+                var counts = await PeekMessageCountsAsync(entity.Name, maxPeek, timeout.Token).WaitAsync(timeout.Token);
                 entity.ActiveMessageCount = counts.ActiveCount;
                 entity.DeadletterMessageCount = counts.DeadLetterCount;
+                entity.MessageCountsKnown = counts.Known;
             }
-            catch
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
-                // If peeking fails, counts remain 0
-                entity.ActiveMessageCount = 0;
-                entity.DeadletterMessageCount = 0;
+                _logger.LogDebug("Message counts unavailable for '{Entity}' ({ExceptionType})", entity.Name, ex.GetType().Name);
             }
         }
         

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AspireAsbEmulatorUi.App.Services;
 
-public class AsbEmulatorSqlEntityRepository
+public class AsbEmulatorSqlEntityRepository : IServiceBusEntityRepository
 {
     private string _connectionString = string.Empty;
     private readonly ILogger<AsbEmulatorSqlEntityRepository> _logger;
