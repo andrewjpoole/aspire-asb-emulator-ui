@@ -81,19 +81,24 @@ public class AsbEmulatorSqlEntityRepository
             string entityType;
             string? parentTopic = null;
             
-            if (typeByte == 1)
+            if (typeByte is 1)
             {
                 entityType = "Topic";
             }
-            else if (typeByte == 2 || typeByte == 3)
+            else if (typeByte is 2)
             {
                 entityType = "Subscription";
                 // Extract parent topic from subscription name (format: TopicName|SubscriptionName)
                 var pipeIndex = cleanName.IndexOf('|');
                 if (pipeIndex > 0)
                 {
-                    parentTopic = cleanName.Substring(0, pipeIndex);
+                    parentTopic = cleanName[..pipeIndex];
                 }
+            }
+            else if (typeByte is 3)
+            {
+                // Ignore subscription rules
+                continue;
             }
             else
             {
