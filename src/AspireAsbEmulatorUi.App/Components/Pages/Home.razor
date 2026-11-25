@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @using System.Threading
+@using AspireAsbEmulatorUi.App.Services
 @inject AspireAsbEmulatorUi.App.Services.IServiceBusEntityRepository Repo
 @inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
 @inject AspireAsbEmulatorUi.App.Services.SessionMetadataService SessionMetadata
@@ -10,6 +11,10 @@
 @inject NavigationManager Navigation
 
 <PageTitle>Home</PageTitle>
+
+@{
+    var filteredEntities = EntityFilter.Apply(_entities, _filter);
+}
 
 <main class="min-h-screen max-w-screen-2xl mx-auto p-6 flex flex-col">
     <div class="flex items-center justify-between mb-4">
@@ -29,7 +34,7 @@
                 <div class="flex items-center gap-3 mb-4">
                     <label class="text-sm text-slate-300 font-medium">Filter</label>
                     <div class="relative flex-1">
-                        <input @bind="_filter" @bind:event="oninput" @bind:after="OnFilterChanged" placeholder="search by name or id" class="bg-slate-900 border border-slate-600 text-slate-100 px-3 py-1 rounded w-full pr-8" />
+                        <input @bind="_filter" @bind:event="oninput" @bind:after="OnFilterChanged" placeholder="name, id, orders* or oin" title="Case-insensitive name, ID or word initials (oin = OrdersInboundNew). Use * for whole-name patterns: orders*, *new, orders*new." class="bg-slate-900 border border-slate-600 text-slate-100 px-3 py-1 rounded w-full pr-8" />
                         @if (!string.IsNullOrWhiteSpace(_filter))
                         {
                             <button @onclick="ClearFilter" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200" title="Clear filter">
@@ -89,7 +94,7 @@
                     </h3>
                     <div class="space-y-2">
                         @{
-                            var queues = _entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                            var queues = filteredEntities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase)).ToList();
                         }
                         @if (!queues.Any() && !_loading)
                         {
@@ -134,7 +139,7 @@
                     </h3>
                     <div class="space-y-2">
                         @{
-                            var topics = _entities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase) && EvaluateFilter(e)).ToList();
+                            var topics = filteredEntities.Where(e => string.Equals(e.EntityType, "Topic", StringComparison.OrdinalIgnoreCase)).ToList();
                         }
                         @if (!topics.Any() && !_loading)
                         {
@@ -166,7 +171,7 @@
                                 </div>
 
                                 @* Render subscriptions for this topic *@
-                                var subs = _entities.Where(e => e.EntityType == "Subscription" && e.ParentTopic == topic.Name && EvaluateFilter(e)).ToList();
+                                var subs = filteredEntities.Where(e => string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase) && string.Equals(e.ParentTopic, topic.Name, StringComparison.OrdinalIgnoreCase)).ToList();
                                 @if (subs.Any())
                                 {
                                     <div class="ml-6 space-y-1 mt-1">
@@ -366,15 +371,6 @@
     private void ApplyFilter()
     {
         StateHasChanged();
-    }
-
-    private bool EvaluateFilter(Models.ServiceBusEntityInfo e)
-    {
-        if (string.IsNullOrWhiteSpace(_filter)) return true;
-        if (e.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)) return true;
-        if (e.DisplayName.Contains(_filter, StringComparison.OrdinalIgnoreCase)) return true;
-        if (long.TryParse(_filter, out var id) && e.Id == id) return true;
-        return false;
     }
 
     private void SelectEntity(Models.ServiceBusEntityInfo e)
