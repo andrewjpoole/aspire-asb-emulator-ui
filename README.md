@@ -18,7 +18,9 @@ Supports the [official Azure Service Bus Emulator](https://learn.microsoft.com/a
 - View all **queues** and **topics** from your ASB emulator
 - Real-time message counts (Active & Dead-Letter Queue)
 - Auto-refresh mode with manual override
-- Filter entities by name or ID
+- Filter entities by name, ID, wildcard pattern or word initials
+
+Entity filtering is case-insensitive. Plain text matches a name substring or exact numeric ID; word-initial prefixes such as `oin` or `oi` also find `OrdersInboundNew` and `orders-inbound-new` (`hoi` finds `HTTPOrderInbound`). Words are detected from the casing and separators in the discovered name. Patterns containing `*` match the whole name: `orders*` starts with orders, `*new` ends with new, `*orders*` contains orders, and `orders*new` supports an internal wildcard. Only `*` is special; other punctuation is literal. Subscriptions match both `topic|subscription` and their displayed leaf name, with matching subscriptions' parent topics kept visible for context.
 
 ### 📨 Message Sender
 - Send messages to queues or topics
