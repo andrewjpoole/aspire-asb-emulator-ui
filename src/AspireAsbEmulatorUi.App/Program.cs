@@ -6,6 +6,12 @@ using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSingleton<ServiceBusAdministrationOptions>();
+builder.Services.AddSingleton<ServiceBusAdministrationService>();
+builder.Services.AddSingleton<Func<AsbEmulatorSqlEntityRepository>>(sp =>
+    () => sp.GetRequiredService<AsbEmulatorSqlEntityRepository>());
+builder.Services.AddSingleton<IServiceBusEntityRepository, ServiceBusEntityRepository>();
+
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
@@ -109,18 +115,14 @@ builder.Services.AddSingleton(sp =>
 {
     var cfg = sp.GetRequiredService<IConfiguration>();
     var logger = sp.GetRequiredService<ILogger<ServiceBusService>>();
-    var repo = sp.GetRequiredService<AsbEmulatorSqlEntityRepository>();
+    var repo = sp.GetRequiredService<IServiceBusEntityRepository>();
 
     // Get the resource name to build the connection string key
     var resourceName = cfg["asb-resource-name"] ?? cfg["ASB_RESOURCE_NAME"] ?? "myservicebus";
     logger.LogInformation("ASB Resource Name: {ResourceName}", resourceName);
 
     // Build the connection string key (Aspire convention: ConnectionStrings__{ResourceName})
-    var connectionStringKey = $"ConnectionStrings__{resourceName}";
-
-    // Try various formats for the connection string
-    var cs = cfg[connectionStringKey]
-             ?? cfg[$"ConnectionStrings:{resourceName}"];
+    var cs = ServiceBusAdministrationOptions.GetDataConnectionString(cfg);
 
     if (string.IsNullOrWhiteSpace(cs))    
     {

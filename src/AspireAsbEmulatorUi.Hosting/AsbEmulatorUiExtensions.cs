@@ -169,10 +169,6 @@ public static class AsbEmulatorUiResourceExtensions
 
         var sbResource = serviceBusResource.Resource;        
 
-        // Find the SQL container that backs the emulator and expose its port
-        var sqlAsbContainerResource = serviceBusResource.ApplicationBuilder.Resources.SingleOrDefault(r => r.Name == $"{sbResource.Name}-mssql")
-            ?? throw new Exception($"Unable to find ASB emulator SQL container with name {sbResource.Name}-mssql");
-
         context.EnvironmentVariables["asb-resource-name"] = sbResource.Name;
 
         // Aspire 13 exposes the emulator management API on its health endpoint (port 5300).
@@ -182,8 +178,17 @@ public static class AsbEmulatorUiResourceExtensions
             context.EnvironmentVariables["asb-management-endpoint"] = serviceBusResource.GetEndpoint("emulatorhealth");
         }
 
+        var sqlAsbContainerResource = serviceBusResource.ApplicationBuilder.Resources.SingleOrDefault(r => r.Name == $"{sbResource.Name}-mssql");
+        if (sqlAsbContainerResource == null && context.EnvironmentVariables.ContainsKey("asb-management-endpoint"))
+            return;
+        if (sqlAsbContainerResource == null)
+            throw new Exception($"Unable to find ASB emulator SQL container with name {sbResource.Name}-mssql");
+
         if (!sqlAsbContainerResource.TryGetUrls(out var urls) || urls == null || !urls.Any())
+        {
+            if (context.EnvironmentVariables.ContainsKey("asb-management-endpoint")) return;
             throw new Exception("Unable to get any SQL endpoint URLs from ASB emulator resource.");
+        }
 
         var firstUrl = urls.First();
         var sqlPort = firstUrl.Endpoint?.Port

@@ -2,7 +2,7 @@
 @rendermode InteractiveServer
 @implements IDisposable
 @using System.Threading
-@inject AspireAsbEmulatorUi.App.Services.AsbEmulatorSqlEntityRepository Repo
+@inject AspireAsbEmulatorUi.App.Services.IServiceBusEntityRepository Repo
 @inject AspireAsbEmulatorUi.App.Services.ServiceBusService Bus
 @inject AspireAsbEmulatorUi.App.Services.SessionMetadataService SessionMetadata
 @inject AspireAsbEmulatorUi.App.Services.SettingsService SettingsService
@@ -111,10 +111,10 @@
                                         </div>
                                         <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                                             <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
-                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@e.ActiveMessageCount</span>
+                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400" title="Unknown when the broker cannot report counts">@(e.MessageCountsKnown ? e.ActiveMessageCount.ToString() : "?")</span>
                                             </div>
                                             <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
-                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@e.DeadletterMessageCount</span>
+                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400" title="Unknown when the broker cannot report counts">@(e.MessageCountsKnown ? e.DeadletterMessageCount.ToString() : "?")</span>
                                             </div>
                                         </div>
                                     </div>
@@ -156,10 +156,10 @@
                                         </div>
                                         <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                                             <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
-                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@topic.ActiveMessageCount</span>
+                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400" title="Messages are held by subscriptions, not topics">-</span>
                                             </div>
                                             <div class="text-xs px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
-                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@topic.DeadletterMessageCount</span>
+                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400" title="Messages are held by subscriptions, not topics">-</span>
                                             </div>
                                         </div>
                                     </div>
@@ -187,10 +187,10 @@
                                                         </div>
                                                         <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                                                             <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Active messages">
-                                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400">@sub.ActiveMessageCount</span>
+                                                                <span class="text-slate-400">Active:</span> <span class="font-semibold text-green-400" title="Unknown when the broker cannot report counts">@(sub.MessageCountsKnown ? sub.ActiveMessageCount.ToString() : "?")</span>
                                                             </div>
                                                             <div class="text-xs px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300" title="Dead-letter queue messages">
-                                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400">@sub.DeadletterMessageCount</span>
+                                                                <span class="text-slate-400">DLQ:</span> <span class="font-semibold text-red-400" title="Unknown when the broker cannot report counts">@(sub.MessageCountsKnown ? sub.DeadletterMessageCount.ToString() : "?")</span>
                                                             </div>
                                                         </div>
                                                 </div>

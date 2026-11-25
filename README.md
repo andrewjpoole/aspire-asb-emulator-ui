@@ -169,11 +169,44 @@ The application uses the following environment variables for configuration:
 
 | Variable | Description |
 |----------|-------------|
+| `ASB_ENTITY_DISCOVERY` | `Auto` (default), `Administration`, or `Sql` (case-insensitive). Administration never accesses SQL. Lowercase `asb-entity-discovery` is also supported. |
+| `ASB_MANAGEMENT_ENDPOINT` | Explicit HTTP/HTTPS administration endpoint. Aspire supplies this automatically for the Microsoft emulator. Credentials come from the data connection string, or Microsoft's fixed development credentials if no data connection string is configured. |
+| `ASB_MANAGEMENT_CONNECTIONSTRING` | Full administration connection string; takes precedence over the endpoint. Preserves credentials, namespace isolation and custom ports. |
+| `ASB_RESOURCE_NAME` | Name of the data connection string, default `myservicebus`. Configure it using `ConnectionStrings__{name}`. |
 | `asb-sql-connectionstring` | Full connection string to the ASB Emulator's SQL backend. Overrides other SQL settings. |
 | `asb-sql-port` | Port of the SQL server (automatically set by `AddAsbEmulatorUi`). |
 | `asb-sql-password` | Password for the `sa` user (automatically set by `AddAsbEmulatorUi`). |
 | `asb-emulator-sqlserver` | Hostname (and optional port) of the SQL server. Useful for custom networking setups. |
 | `AsbEmulatorUi__SettingsOverride` | JSON string to override application settings (Canned Messages, etc.). |
+
+### Administration APIs and community emulators
+
+The [Microsoft emulator added administration support in 2.0.0](https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-emulator-whats-new); version 2.0.1 is also published. The UI uses the .NET `ServiceBusAdministrationClient` to list queues, topics and subscriptions, read session requirements, and obtain runtime active/DLQ counts when supported. Rules are never listed as subscriptions. Runtime counts are not capped at 100. Microsoft emulator 2.0.1 omits queue count details and emits unrecognized subscription count fields that the SDK otherwise silently reads as zero; the UI detects those responses and falls back to bounded, non-locking peeks (capped at 100). Unavailable counts display `?`, not a misleading zero. Topics display `-` because messages and DLQs belong to their subscriptions.
+
+`Auto` prefers administration **when a management endpoint or connection string is explicitly configured**. SQL is initialized only if administration is not configured, or if administration is unsupported/unavailable and SQL settings exist. Authentication failures, invalid configuration and unexpected server errors are reported rather than silently switching providers. Successful empty namespaces do not trigger fallback. Enumeration and runtime-count loading share a 10-second budget.
+
+Use `Administration` for [AlmostServiceBus](https://github.com/gkinsman/AlmostServiceBus) and [OpenServiceBus](https://github.com/MauritsArissen/OpenServiceBus), or to ensure the Microsoft emulator UI never accesses SQL. No SQL variables are needed. `Sql` forces legacy Microsoft entity discovery; its best-effort peek counts are capped at 100 and share a 10-second refresh budget. SQL variables also accept uppercase underscore aliases, and management variables accept lowercase hyphen aliases.
+
+Standalone configuration (use hostnames/ports reachable **from the UI process/container**):
+
+```bash
+# Common settings
+ASB_ENTITY_DISCOVERY=Administration
+ConnectionStrings__myservicebus='Endpoint=sb://servicebus:5672;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SAS_KEY_VALUE;UseDevelopmentEmulator=true;'
+
+# Microsoft emulator 2.x: HTTP administration is separate from AMQP.
+ASB_MANAGEMENT_ENDPOINT=http://servicebus:5300
+
+# AlmostServiceBus: use its exposed Atom administration endpoint (normally 5300).
+# Set the data connection string's SharedAccessKeyName to the desired isolated
+# namespace and SharedAccessKey to the emulator's configured key (e.g. emulator).
+# ASB_MANAGEMENT_ENDPOINT=http://almost-servicebus:5300
+
+# OpenServiceBus: Atom administration shares the AMQP port, NOT its JSON port 5300.
+# ASB_MANAGEMENT_ENDPOINT=http://open-servicebus:5672
+```
+
+An explicit `ASB_MANAGEMENT_CONNECTIONSTRING` can instead supply a separate management host, port or credentials. HTTP endpoints select development-emulator/plaintext mode; HTTPS endpoints retain TLS. Certificates must be trusted normally; certificate validation is never disabled. These are server configuration settings, not browser/localStorage preferences. This integration is read-only and does not add entity create/delete screens or alter message send/receive/settlement.
 
 ## Placeholder Syntax
 
