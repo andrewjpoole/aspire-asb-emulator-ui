@@ -2,9 +2,13 @@
 
 # Azure Service Bus Emulator UI
 
-A Blazor-based web UI for exploring and testing Azure Service Bus entities in the [Azure Service Bus Emulator](https://learn.microsoft.com/azure/service-bus-messaging/test-locally-with-service-bus-emulator) especially although not exclusively in Aspire.
+A Blazor-based web UI for exploring and testing Azure Service Bus emulators, with or without Aspire.
 
 Basically postman for the ASB emulator!
+
+Supports the [official Azure Service Bus Emulator](https://learn.microsoft.com/azure/service-bus-messaging/test-locally-with-service-bus-emulator), [AlmostServiceBus](https://github.com/gkinsman/AlmostServiceBus), and [OpenServiceBus](https://github.com/MauritsArissen/OpenServiceBus). See [emulator configuration](#administration-apis-and-community-emulators) for connection settings.
+
+> **Official emulator limits:** Microsoft's emulator supports a maximum of **50 queues and topics combined per namespace**, and **50 subscriptions per topic**. These are [emulator quotas](https://learn.microsoft.com/en-us/azure/service-bus-messaging/overview-emulator#usage-quotas), not limits imposed by this UI.
 
 ![Screen recording](./media/AsbEmulatorUiScreenshot.gif)
 
